@@ -1,0 +1,36 @@
+{
+  "name": "opensearch-ui",
+  "productName": "Search Cluster UI",
+  "private": true,
+  "version": "0.3.0",
+  "description": "Desktop client for Elasticsearch and OpenSearch clusters",
+  "main": "dist/main/index.js",
+  "scripts": {
+    "dev": "node scripts/dev.mjs",
+    "build": "node scripts/build.mjs",
+    "package:win": "node scripts/package-win.mjs",
+    "typecheck": "tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.renderer.json",
+    "start": "electron ."
+  },
+  "dependencies": {
+    "@codemirror/lang-json": "^6.0.1",
+    "@codemirror/theme-one-dark": "^6.1.2",
+    "codemirror": "^6.0.1",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "zustand": "^4.5.5"
+  },
+  "devDependencies": {
+    "@types/node": "^22.7.4",
+    "@types/react": "^18.3.10",
+    "@types/react-dom": "^18.3.0",
+    "@vitejs/plugin-react": "^4.3.2",
+    "electron": "^33.4.0",
+    "esbuild": "^0.24.0",
+    "typescript": "^5.6.2",
+    "vite": "^5.4.8"
+  },
+  "allowScripts": {
+    "electron@33.4.11": true
+  }
+}
