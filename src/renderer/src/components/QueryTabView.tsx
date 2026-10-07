@@ -40,8 +40,6 @@ interface LastQuery {
 
 
 
-type OpenDropdown = 'history' | 'snippets' | null
-
 interface SnippetFormState {
   /** Present when renaming an existing snippet. */
   id?: string
@@ -140,7 +138,8 @@ export function QueryTabView({ tabId, onTitle }: Props) {
 
   const [history, setHistory] = useState<QueryHistoryEntry[]>(() => loadHistory())
   const [snippets, setSnippets] = useState<QuerySnippet[]>(() => loadSnippets())
-  const [openDropdown, setOpenDropdown] = useState<OpenDropdown>(null)
+  const [historyOpen, setHistoryOpen] = useState(false)
+  const [snippetsOpen, setSnippetsOpen] = useState(false)
   const [snippetForm, setSnippetForm] = useState<SnippetFormState | null>(null)
   const [fields, setFields] = useState<FieldInfo[]>([])
   const [editDoc, setEditDoc] = useState<{ index: string; docId: string; source: Record<string, unknown> } | null>(null)
@@ -178,34 +177,34 @@ export function QueryTabView({ tabId, onTitle }: Props) {
     }
   }, [activeId, index])
 
-  // Close dropdown on outside click
+  // Close snippets dropdown on outside click
   useEffect(() => {
-    if (openDropdown == null) return
+    if (!snippetsOpen) return
     function onPointerDown(e: MouseEvent): void {
       if (toolbarRef.current != null && !toolbarRef.current.contains(e.target as Node)) {
-        setOpenDropdown(null)
+        setSnippetsOpen(false)
         setSnippetForm(null)
       }
     }
     document.addEventListener('mousedown', onPointerDown)
     return () => document.removeEventListener('mousedown', onPointerDown)
-  }, [openDropdown])
+  }, [snippetsOpen])
 
-  // Close dropdown on Esc
+  // Close snippets dropdown on Esc
   useEffect(() => {
-    if (openDropdown == null) return
+    if (!snippetsOpen) return
     function onKeyDown(e: KeyboardEvent): void {
       if (e.key === 'Escape') {
-        setOpenDropdown(null)
+        setSnippetsOpen(false)
         setSnippetForm(null)
       }
     }
     document.addEventListener('keydown', onKeyDown)
     return () => document.removeEventListener('keydown', onKeyDown)
-  }, [openDropdown])
+  }, [snippetsOpen])
 
-  function toggleDropdown(which: 'history' | 'snippets'): void {
-    setOpenDropdown((prev) => (prev === which ? null : which))
+  function toggleSnippets(): void {
+    setSnippetsOpen((prev) => !prev)
     setSnippetForm(null)
   }
 
@@ -281,6 +280,7 @@ export function QueryTabView({ tabId, onTitle }: Props) {
       const res = await api.msearch(activeId, { index: index.trim() || null, ndjson: ndjson + '\n' })
       setTookMs(Math.round(performance.now() - started))
       setMsearchResult(res)
+      setHistory(pushHistory({ index: index.trim(), body: text }))
       const pattern = index.trim() || '_msearch'
       onTitle(tabId, pattern.length > TAB_TITLE_LIMIT ? `${pattern.slice(0, TAB_TITLE_LIMIT)}…` : pattern)
     } catch (e) {
@@ -344,7 +344,8 @@ export function QueryTabView({ tabId, onTitle }: Props) {
   function applyEntry(indexValue: string, body: string): void {
     setIndex(indexValue)
     setText(body)
-    setOpenDropdown(null)
+    setHistoryOpen(false)
+    setSnippetsOpen(false)
     setSnippetForm(null)
   }
 
@@ -472,46 +473,52 @@ function renderCell(hit: SearchHit, column: string): ReactNode {
           ))}
         </datalist>
 
-        <div className="dropdown-wrap">
-          <button
-            className="btn"
-            onClick={() => toggleDropdown('history')}
-            title="Recently executed queries"
-          >
-            History ({history.length})
-          </button>
-          {openDropdown === 'history' && (
-            <div className="dropdown">
+        <button
+          className="btn"
+          onClick={() => setHistoryOpen(true)}
+          title="Recently executed queries"
+        >
+          History ({history.length})
+        </button>
+        {historyOpen && (
+          <div className="modal-backdrop" onMouseDown={(e) => e.target === e.currentTarget && setHistoryOpen(false)}>
+            <div className="modal history-modal">
+              <h2>Query History</h2>
               {history.length === 0 ? (
                 <div className="dropdown-empty">No history yet — run a query first</div>
               ) : (
-                history.map((h) => (
-                  <div
-                    key={h.id}
-                    className="dropdown-item"
-                    onClick={() => applyEntry(h.index, h.body)}
-                    title={h.body}
-                  >
-                    <span className="meta">{formatTime(h.at)}</span>
-                    <span className="meta">{h.index || '—'}</span>
-                    <span className="preview">{bodyPreview(h.body)}</span>
-                    <span className="item-actions">
-                      <button
-                        className="icon-btn"
-                        title="Remove from history"
-                        onClick={(e) => {
-                          e.stopPropagation()
-                          setHistory(removeHistoryEntry(h.id))
-                        }}
-                      >
-                        ✕
-                      </button>
-                    </span>
-                  </div>
-                ))
+                <div className="history-list">
+                  {history.map((h) => (
+                    <div
+                      key={h.id}
+                      className="dropdown-item"
+                      onClick={() => {
+                        applyEntry(h.index, h.body)
+                        setHistoryOpen(false)
+                      }}
+                      title={h.body}
+                    >
+                      <span className="meta">{formatTime(h.at)}</span>
+                      <span className="meta">{h.index || '—'}</span>
+                      <span className="preview">{bodyPreview(h.body)}</span>
+                      <span className="item-actions">
+                        <button
+                          className="icon-btn"
+                          title="Remove from history"
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            setHistory(removeHistoryEntry(h.id))
+                          }}
+                        >
+                          ✕
+                        </button>
+                      </span>
+                    </div>
+                  ))}
+                </div>
               )}
-              {history.length > 0 && (
-                <div className="dropdown-footer">
+              <div className="modal-footer">
+                {history.length > 0 && (
                   <button
                     className="btn btn-ghost"
                     onClick={() => {
@@ -521,21 +528,25 @@ function renderCell(hit: SearchHit, column: string): ReactNode {
                   >
                     Clear all
                   </button>
-                </div>
-              )}
+                )}
+                <span className="spacer" />
+                <button className="btn btn-primary" onClick={() => setHistoryOpen(false)}>
+                  Close
+                </button>
+              </div>
             </div>
-          )}
-        </div>
+          </div>
+        )}
 
         <div className="dropdown-wrap">
           <button
             className="btn"
-            onClick={() => toggleDropdown('snippets')}
+            onClick={() => toggleSnippets()}
             title="Saved query snippets"
           >
             Snippets ({snippets.length})
           </button>
-          {openDropdown === 'snippets' && (
+          {snippetsOpen && (
             <div className="dropdown">
               {snippetForm != null && (
                 <div className="snippet-form">
