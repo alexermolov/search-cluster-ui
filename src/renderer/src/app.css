@@ -1623,3 +1623,55 @@ button.dropdown-item {
 .context-menu-item.danger:hover:not(:disabled) {
   background: rgba(248, 81, 73, 0.12);
 }
+
+/* ---------- Document pagination controls ---------- */
+
+.docs-controls {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 2px;
+  flex-wrap: wrap;
+}
+
+.page-size {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  color: var(--text-dim);
+}
+
+.page-size .select-input {
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  color: inherit;
+  border-radius: var(--radius);
+  padding: 2px 6px;
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+  outline: none;
+}
+
+.page-size .select-input:focus {
+  border-color: var(--accent);
+}
+
+.pagination {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.pagination .btn-sm {
+  padding: 3px 10px;
+  font-size: 11px;
+}
+
+.page-info {
+  font-size: 12px;
+  color: var(--text-dim);
+  white-space: nowrap;
+}

@@ -1,0 +1,27 @@
+appId: com.github.search-cluster-ui
+productName: Search Cluster UI
+copyright: Copyright © Search Cluster UI Team
+directories:
+  output: release/installer
+  buildResources: build
+files:
+  - dist/**/*
+  - package.json
+  - "!node_modules"
+  - "!scripts"
+  - "!src"
+  - "!**/*.ts"
+  - "!tsconfig*.json"
+  - "!vite.*"
+  - "!*.config.*"
+extraMetadata:
+  main: dist/main/index.js
+asar: true
+win:
+  target: nsis
+nsis:
+  oneClick: false
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: always
+  createStartMenuShortcut: true
+  shortcutName: Search Cluster UI

@@ -49,6 +49,8 @@ export function IndexDetailView({ indexName, onBack }: Props) {
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   const [menuOpen, setMenuOpen] = useState(false)
+  const [pageSize, setPageSize] = useState(10)
+  const [page, setPage] = useState(0)
   const [aliasInput, setAliasInput] = useState('')
   const [busy, setBusy] = useState(false)
   const [actionError, setActionError] = useState<string | null>(null)
@@ -81,14 +83,23 @@ export function IndexDetailView({ indexName, onBack }: Props) {
       .finally(() => !cancelled && setLoading(false))
 
     api
-      .search(activeId, { index: indexName, body: { size: 10, query: { match_all: {} } } })
-      .then((r) => !cancelled && setDocs(r))
+      .search(activeId, {
+        index: indexName,
+        body: { size: pageSize, from: page * pageSize, query: { match_all: {} } },
+      })
+      .then((r) => {
+        if (cancelled) return
+        setDocs(r)
+        if (r.hits.length === 0 && page > 0) {
+          setPage(page - 1)
+        }
+      })
       .catch(() => {}) // sample docs are best-effort
 
     return () => {
       cancelled = true
     }
-  }, [activeId, indexName, reloadTick])
+  }, [activeId, indexName, reloadTick, page, pageSize])
 
   // Close the manage dropdown on outside click
   useEffect(() => {
@@ -113,8 +124,14 @@ export function IndexDetailView({ indexName, onBack }: Props) {
   }, [menuOpen])
 
   function reload(): void {
+    setPage(0)
     reloadIndexDetail()
   }
+
+  const totalDocs = docs?.total ?? 0
+  const totalPages = Math.max(1, Math.ceil(totalDocs / pageSize))
+  const fromCount = page * pageSize + 1
+  const toCount = Math.min((page + 1) * pageSize, totalDocs)
 
   async function copyDocument(docId: string, source: Record<string, unknown>): Promise<void> {
     try {
@@ -252,7 +269,47 @@ export function IndexDetailView({ indexName, onBack }: Props) {
 
       {detail && (
         <>
-          <Section title={`Documents (${docs?.total ?? docs?.hits.length ?? 0} total)`} defaultOpen>
+          <Section title={`Documents (${totalDocs} total)`} defaultOpen>
+            <div className="docs-controls">
+              <div className="page-size">
+                Show{' '}
+                <select
+                  className="select-input"
+                  value={pageSize}
+                  onChange={(e) => {
+                    setPageSize(Number(e.target.value))
+                    setPage(0)
+                  }}
+                >
+                  <option value={10}>10</option>
+                  <option value={25}>25</option>
+                  <option value={50}>50</option>
+                  <option value={100}>100</option>
+                </select>{' '}
+                per page
+              </div>
+              <div className="pagination">
+                <button
+                  className="btn btn-sm"
+                  onClick={() => setPage((p) => Math.max(0, p - 1))}
+                  disabled={page === 0}
+                >
+                  ← Prev
+                </button>
+                <span className="page-info">
+                  {totalDocs > 0
+                    ? `${fromCount}–${toCount} of ${totalDocs}`
+                    : '0 results'}
+                </span>
+                <button
+                  className="btn btn-sm"
+                  onClick={() => setPage((p) => Math.min(totalPages - 1, p + 1))}
+                  disabled={page >= totalPages - 1 || totalDocs === 0}
+                >
+                  Next →
+                </button>
+              </div>
+            </div>
             {docs && docs.hits.length > 0 ? (
               docs.hits.map((h) => (
                 <details key={h._id} className="doc">
