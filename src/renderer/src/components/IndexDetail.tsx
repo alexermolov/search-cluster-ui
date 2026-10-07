@@ -21,6 +21,7 @@ interface SectionProps {
 
 type PendingAction =
   | { kind: 'delete' }
+  | { kind: 'clear' }
   | { kind: 'delete-doc'; docId: string }
   | { kind: 'open' }
   | { kind: 'close' }
@@ -158,6 +159,14 @@ export function IndexDetailView({ indexName, onBack }: Props) {
         await refreshCluster()
         return
       }
+      if (action.kind === 'clear') {
+        await api.clearIndex(activeId, indexName)
+        setPending(null)
+        setMenuOpen(false)
+        reload()
+        await refreshCluster()
+        return
+      }
       if (action.kind === 'delete-doc') {
         await api.deleteDocument(activeId, indexName, action.docId)
         setPending(null)
@@ -220,6 +229,9 @@ export function IndexDetailView({ indexName, onBack }: Props) {
             <div className="dropdown">
               <button type="button" className="dropdown-item" onClick={() => setPending({ kind: 'delete' })}>
                 <span className="preview danger-text">Delete index…</span>
+              </button>
+              <button type="button" className="dropdown-item" onClick={() => setPending({ kind: 'clear' })}>
+                <span className="preview danger-text">Clear all documents…</span>
               </button>
               {indexStatus === 'close' ? (
                 <button type="button" className="dropdown-item" onClick={() => setPending({ kind: 'open' })}>
@@ -405,6 +417,22 @@ export function IndexDetailView({ indexName, onBack }: Props) {
             </>
           }
           confirmLabel="Delete"
+          danger
+          onConfirm={() => void runAction(pending)}
+          onCancel={() => setPending(null)}
+        />
+      )}
+
+      {pending?.kind === 'clear' && (
+        <ConfirmDialog
+          title="Clear all documents"
+          message={
+            <>
+              Clear all documents from index <span className="mono">{indexName}</span>? The index
+              itself and its mappings/settings will be preserved.
+            </>
+          }
+          confirmLabel="Clear"
           danger
           onConfirm={() => void runAction(pending)}
           onCancel={() => setPending(null)}

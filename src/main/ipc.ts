@@ -142,6 +142,9 @@ export function registerIpcHandlers(store: ConnectionStore): void {
   ipcMain.handle(IPC.ClusterIndexDelete, (_e, id: string, indexName: string) =>
     clientFor(id).deleteIndex(indexName),
   )
+  ipcMain.handle(IPC.ClusterIndexClear, (_e, id: string, indexName: string) =>
+    clientFor(id).clearIndex(indexName),
+  )
   ipcMain.handle(
     IPC.ClusterDocumentDelete,
     (_e, id: string, indexName: string, docId: string) =>

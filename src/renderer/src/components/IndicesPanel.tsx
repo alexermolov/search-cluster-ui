@@ -46,6 +46,7 @@ const COLUMNS: { key: SortKey | null; label: string }[] = [
 
 type PendingAction =
   | { kind: 'delete' }
+  | { kind: 'clear' }
   | { kind: 'open' }
   | { kind: 'close' }
 
@@ -92,6 +93,8 @@ export function IndicesPanel() {
     try {
       if (action.kind === 'delete') {
         await api.deleteIndex(activeId, action.index.name)
+      } else if (action.kind === 'clear') {
+        await api.clearIndex(activeId, action.index.name)
       } else if (action.kind === 'open') {
         await api.openIndex(activeId, action.index.name)
       } else {
@@ -115,6 +118,12 @@ export function IndicesPanel() {
         onSelect: () => setPending({ kind: index.status === 'close' ? 'open' : 'close', index }),
       },
       { label: 'Reindex…', disabled: busy, onSelect: () => setReindexFor(index) },
+      {
+        label: 'Clear data…',
+        danger: true,
+        disabled: busy,
+        onSelect: () => setPending({ kind: 'clear', index }),
+      },
       {
         label: 'Delete index…',
         danger: true,
@@ -199,6 +208,22 @@ export function IndicesPanel() {
             </>
           }
           confirmLabel="Delete"
+          danger
+          onConfirm={() => void runAction(pending)}
+          onCancel={() => setPending(null)}
+        />
+      )}
+
+      {pending?.kind === 'clear' && (
+        <ConfirmDialog
+          title="Clear index data"
+          message={
+            <>
+              Clear all documents from index <span className="mono">{pending.index.name}</span>? The
+              index itself and its mappings/settings will be preserved.
+            </>
+          }
+          confirmLabel="Clear"
           danger
           onConfirm={() => void runAction(pending)}
           onCancel={() => setPending(null)}

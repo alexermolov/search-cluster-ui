@@ -50,6 +50,7 @@ export interface ClusterClient {
     signal?: AbortSignal,
   ): Promise<Record<string, unknown>>
   deleteIndex(indexName: string): Promise<void>
+  clearIndex(indexName: string): Promise<{ deleted: number; failures: unknown[] }>
   deleteDocument(indexName: string, docId: string): Promise<void>
   getDocument(
     indexName: string,
@@ -291,6 +292,18 @@ export abstract class BaseClusterClient implements ClusterClient {
   async deleteIndex(indexName: string): Promise<void> {
     const res = await this.http.request<any>('DELETE', `/${encodeURIComponent(indexName)}`)
     if (res?.acknowledged === false) throw new Error('Cluster did not acknowledge')
+  }
+
+  async clearIndex(indexName: string): Promise<{ deleted: number; failures: unknown[] }> {
+    const res = await this.http.request<any>(
+      'POST',
+      `/${encodeURIComponent(indexName)}/_delete_by_query?refresh=wait_for`,
+      { query: { match_all: {} } },
+    )
+    if (res?.failures && Array.isArray(res.failures) && res.failures.length > 0) {
+      throw new Error(`Delete by query failed with ${res.failures.length} failures`)
+    }
+    return { deleted: res?.deleted ?? 0, failures: res?.failures ?? [] }
   }
 
   async deleteDocument(indexName: string, docId: string): Promise<void> {

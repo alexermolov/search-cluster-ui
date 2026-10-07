@@ -26,6 +26,8 @@ const api: ElectronApi = {
     ipcRenderer.invoke(IPC.ClusterExplain, connectionId, input, requestId),
   deleteIndex: (connectionId, indexName) =>
     ipcRenderer.invoke(IPC.ClusterIndexDelete, connectionId, indexName),
+  clearIndex: (connectionId, indexName) =>
+    ipcRenderer.invoke(IPC.ClusterIndexClear, connectionId, indexName),
   deleteDocument: (connectionId, indexName, docId) =>
     ipcRenderer.invoke(IPC.ClusterDocumentDelete, connectionId, indexName, docId),
   getDocument: (connectionId, indexName, docId, requestId) =>

@@ -37,6 +37,7 @@ export const IPC = {
   ClusterSearch: 'cluster:search',
   ClusterExplain: 'cluster:explain',
   ClusterIndexDelete: 'cluster:index-delete',
+  ClusterIndexClear: 'cluster:index-clear',
   ClusterDocumentDelete: 'cluster:document-delete',
   ClusterDocumentGet: 'cluster:document-get',
   ClusterDocumentSave: 'cluster:document-save',
@@ -183,6 +184,7 @@ export interface ElectronApi {
     requestId?: string,
   ): Promise<Record<string, unknown>>
   deleteIndex(connectionId: string, indexName: string): Promise<void>
+  clearIndex(connectionId: string, indexName: string): Promise<{ deleted: number; failures: unknown[] }>
   deleteDocument(connectionId: string, indexName: string, docId: string): Promise<void>
   getDocument(
     connectionId: string,
