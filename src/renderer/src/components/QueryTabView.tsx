@@ -147,6 +147,7 @@ export function QueryTabView({ tabId, onTitle }: Props) {
   const [exportOpen, setExportOpen] = useState(false)
   const [exporting, setExporting] = useState(false)
   const [exportInfo, setExportInfo] = useState<string | null>(null)
+  const [indexDropdownOpen, setIndexDropdownOpen] = useState(false)
 
   const toolbarRef = useRef<HTMLDivElement | null>(null)
   // Fresh fields for the completion source without recreating it.
@@ -460,18 +461,41 @@ function renderCell(hit: SearchHit, column: string): ReactNode {
   return (
     <div className="query">
       <div className="toolbar" ref={toolbarRef}>
-        <input
-          className="input mono"
-          list="index-list"
-          placeholder="Index pattern, e.g. logs-*"
-          value={index}
-          onChange={(e) => setIndex(e.target.value)}
-        />
-        <datalist id="index-list">
-          {indices.map((i) => (
-            <option key={i.name} value={i.name} />
-          ))}
-        </datalist>
+        <div className="dropdown-wrap" style={{ flex: '1 1 auto', display: 'flex' }}>
+          <input
+            className="input mono"
+            placeholder="Index pattern, e.g. logs-*"
+            value={index}
+            onChange={(e) => setIndex(e.target.value)}
+          />
+          <button
+            className="btn"
+            onClick={() => setIndexDropdownOpen((v) => !v)}
+            title="Select index"
+          >
+            ▼
+          </button>
+          {indexDropdownOpen && (
+            <div className="dropdown" style={{ maxHeight: '20rem', overflow: 'auto', minWidth: '100%' }}>
+              {indices.length === 0 ? (
+                <div className="dropdown-empty">No indices</div>
+              ) : (
+                indices.map((i) => (
+                  <div
+                    key={i.name}
+                    className="dropdown-item"
+                    onClick={() => {
+                      setIndex(i.name)
+                      setIndexDropdownOpen(false)
+                    }}
+                  >
+                    <span className="preview">{i.name}</span>
+                  </div>
+                ))
+              )}
+            </div>
+          )}
+        </div>
 
         <button
           className="btn"
