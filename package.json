@@ -7,6 +7,11 @@
   "author": "Search Cluster UI Team",
   "main": "dist/main/index.js",
   "scripts": {
+    "release": "npm run release:patch",
+    "release:patch": "npm version patch -m \"chore(release): v%s\" && npm run release:push",
+    "release:minor": "npm version minor -m \"chore(release): v%s\" && npm run release:push",
+    "release:major": "npm version major -m \"chore(release): v%s\" && npm run release:push",
+    "release:push": "git push origin main --follow-tags",
     "dev": "node scripts/dev.mjs",
     "build": "node scripts/build.mjs",
     "package:win": "node scripts/package-win.mjs",

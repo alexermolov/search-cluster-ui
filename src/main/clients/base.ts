@@ -297,7 +297,7 @@ export abstract class BaseClusterClient implements ClusterClient {
   async clearIndex(indexName: string): Promise<{ deleted: number; failures: unknown[] }> {
     const res = await this.http.request<any>(
       'POST',
-      `/${encodeURIComponent(indexName)}/_delete_by_query?refresh=wait_for`,
+      `/${encodeURIComponent(indexName)}/_delete_by_query?refresh=true`,
       { query: { match_all: {} } },
     )
     if (res?.failures && Array.isArray(res.failures) && res.failures.length > 0) {
@@ -309,7 +309,7 @@ export abstract class BaseClusterClient implements ClusterClient {
   async deleteDocument(indexName: string, docId: string): Promise<void> {
     const res = await this.http.request<any>(
       'DELETE',
-      `/${encodeURIComponent(indexName)}/_doc/${encodeURIComponent(docId)}?refresh=wait_for`,
+      `/${encodeURIComponent(indexName)}/_doc/${encodeURIComponent(docId)}?refresh=true`,
     )
     if (res?.result === 'not_found') throw new Error('Document not found')
   }
