@@ -150,6 +150,20 @@ export function QueryTabView({ tabId, onTitle }: Props) {
   const [indexDropdownOpen, setIndexDropdownOpen] = useState(false)
 
   const toolbarRef = useRef<HTMLDivElement | null>(null)
+  const indexDropdownRef = useRef<HTMLDivElement | null>(null)
+
+  // Close index dropdown on outside click.
+  useEffect(() => {
+    if (!indexDropdownOpen) return
+    function onDocClick(e: MouseEvent) {
+      if (indexDropdownRef.current && !indexDropdownRef.current.contains(e.target as Node)) {
+        setIndexDropdownOpen(false)
+      }
+    }
+    document.addEventListener('mousedown', onDocClick)
+    return () => document.removeEventListener('mousedown', onDocClick)
+  }, [indexDropdownOpen])
+
   // Fresh fields for the completion source without recreating it.
   const fieldsRef = useRef(fields)
   fieldsRef.current = fields
@@ -461,7 +475,7 @@ function renderCell(hit: SearchHit, column: string): ReactNode {
   return (
     <div className="query">
       <div className="toolbar" ref={toolbarRef}>
-        <div className="dropdown-wrap" style={{ flex: '1 1 auto', display: 'flex' }}>
+        <div className="dropdown-wrap" style={{ flex: '1 1 auto', display: 'flex' }} ref={indexDropdownRef}>
           <input
             className="input mono"
             placeholder="Index pattern, e.g. logs-*"
@@ -802,17 +816,20 @@ function renderCell(hit: SearchHit, column: string): ReactNode {
             <button className="btn" disabled={!canNext} onClick={() => goTo(page + 1)}>
               Next ›
             </button>
-            <select
-              className="input"
-              value={pageSize}
-              onChange={(e) => changePageSize(Number(e.target.value))}
-            >
-              {sizeOptions.map((n) => (
-                <option key={n} value={n}>
-                  {n} / page
-                </option>
-              ))}
-            </select>
+            <label className="page-size">
+              <select
+                className="select-input"
+                value={pageSize}
+                onChange={(e) => changePageSize(Number(e.target.value))}
+              >
+                {sizeOptions.map((n) => (
+                  <option key={n} value={n}>
+                    {n}
+                  </option>
+                ))}
+              </select>
+              <span>/ page</span>
+            </label>
           </div>
         </div>
       )}

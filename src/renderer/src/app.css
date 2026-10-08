@@ -981,6 +981,7 @@ textarea.input {
 
 .pager .btn {
   padding: 4px 10px;
+  white-space: nowrap;
 }
 
 /* ---------- History & snippets dropdowns ---------- */
