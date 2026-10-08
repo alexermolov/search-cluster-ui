@@ -536,8 +536,8 @@ function renderCell(hit: SearchHit, column: string): ReactNode {
                       }}
                       title={h.body}
                     >
-                      <span className="meta">{formatTime(h.at)}</span>
-                      <span className="meta">{h.index || '—'}</span>
+                      <span className="meta history-time">{formatTime(h.at)}</span>
+                      <span className="meta history-index">{h.index || '—'}</span>
                       <span className="preview">{bodyPreview(h.body)}</span>
                       <span className="item-actions">
                         <button

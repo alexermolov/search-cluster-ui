@@ -1049,12 +1049,26 @@ button.dropdown-item {
 }
 
 .dropdown-item .item-actions {
-  display: none;
+  display: flex;
+  opacity: 0;
+  pointer-events: none;
   gap: 2px;
 }
 
 .dropdown-item:hover .item-actions {
-  display: flex;
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.dropdown-item .history-time {
+  width: 75px;
+}
+
+.dropdown-item .history-index {
+  width: 160px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .dropdown-item .item-actions button {
