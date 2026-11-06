@@ -8,6 +8,7 @@ import {
   type ExplainInput,
   type KafkaMessageProduceInput,
   type KafkaMessagesInput,
+  type KafkaSearchInput,
   type KafkaTopicCreateInput,
   type MsearchInput,
   type RedisKeysScanInput,
@@ -36,6 +37,7 @@ import {
   deleteKafkaTopic,
   fetchKafkaConsumerGroups,
   fetchKafkaMessages,
+  searchKafkaMessages,
   fetchKafkaTopicPartitions,
   listKafkaTopics,
   produceKafkaMessage,
@@ -180,6 +182,17 @@ export function registerIpcHandlers(
       aborts.release(requestId),
     )
   })
+  ipcMain.handle(
+    IPC.KafkaSearch,
+    (event, id: string, input: KafkaSearchInput, requestId: string) => {
+      const signal = aborts.signalFor(requestId)
+      return searchKafkaMessages(kafkaCache, kafkaConfigFor(id), input, signal, (progress) => {
+        if (requestId && !event.sender.isDestroyed()) {
+          event.sender.send(IPC.KafkaSearchProgress, { ...progress, requestId })
+        }
+      }).finally(() => aborts.release(requestId))
+    },
+  )
   ipcMain.handle(IPC.KafkaMessageProduce, (_e, id: string, input: KafkaMessageProduceInput) =>
     produceKafkaMessage(kafkaCache, kafkaConfigFor(id), input),
   )

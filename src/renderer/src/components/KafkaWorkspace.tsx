@@ -557,6 +557,10 @@ export function KafkaWorkspace({ onClose }: { onClose: () => void }) {
   const [selectedTopic, setSelectedTopic] = useState('')
   const [messages, setMessages] = useState<KafkaMessage[]>([])
   const [search, setSearch] = useState('')
+  const [searchResults, setSearchResults] = useState<KafkaMessage[] | null>(null)
+  const [searchScanned, setSearchScanned] = useState(0)
+  const [searching, setSearching] = useState(false)
+  const [searchCancelled, setSearchCancelled] = useState(false)
   const [limit, setLimit] = useState(20)
   const [loadingTopics, setLoadingTopics] = useState(false)
   const [loadingMessages, setLoadingMessages] = useState(false)
@@ -571,6 +575,8 @@ export function KafkaWorkspace({ onClose }: { onClose: () => void }) {
   const [loadingDetail, setLoadingDetail] = useState(false)
   const topicRequest = useRef(0)
   const messageRequest = useRef(0)
+  const searchRequest = useRef(0)
+  const activeSearchId = useRef<string | null>(null)
 
   const active = connections.find((connection) => connection.id === activeId) ?? null
   const searchableMessages = useMemo(
@@ -578,16 +584,18 @@ export function KafkaWorkspace({ onClose }: { onClose: () => void }) {
     [messages],
   )
   const visibleMessages = useMemo(() => {
+    if (searchResults !== null) return searchResults
     const needle = search.trim().toLocaleLowerCase()
     if (!needle) return messages
     return messages.filter((_, index) => searchableMessages[index].includes(needle))
-  }, [messages, search, searchableMessages])
+  }, [messages, search, searchableMessages, searchResults])
   const visibleTopics = useMemo(() => {
     const needle = topicFilter.trim().toLocaleLowerCase()
     return needle ? topics.filter((item) => item.name.toLocaleLowerCase().includes(needle)) : topics
   }, [topics, topicFilter])
 
   async function reloadTopics(connectionId: string): Promise<void> {
+    cancelSearch()
     const request = ++topicRequest.current
     messageRequest.current += 1
     setLoadingTopics(true)
@@ -595,6 +603,7 @@ export function KafkaWorkspace({ onClose }: { onClose: () => void }) {
     setTopics([])
     setSelectedTopic('')
     setMessages([])
+    setSearchResults(null)
     setLoadingMessages(false)
     try {
       const result = await api.listKafkaTopics(connectionId)
@@ -642,6 +651,7 @@ export function KafkaWorkspace({ onClose }: { onClose: () => void }) {
           setTopics([])
           setSelectedTopic('')
           setMessages([])
+          setSearchResults(null)
           setLoadingTopics(false)
           setLoadingMessages(false)
         }
@@ -653,9 +663,11 @@ export function KafkaWorkspace({ onClose }: { onClose: () => void }) {
 
   async function loadMessages(topic = selectedTopic): Promise<void> {
     if (!active || !topic) return
+    cancelSearch()
     const request = ++messageRequest.current
     const connectionId = active.id
     setSelectedTopic(topic)
+    setSearchResults(null)
     setLoadingMessages(true)
     setError(null)
     try {
@@ -670,6 +682,60 @@ export function KafkaWorkspace({ onClose }: { onClose: () => void }) {
       if (request === messageRequest.current) setLoadingMessages(false)
     }
   }
+
+  function cancelSearch(): void {
+    const requestId = activeSearchId.current
+    if (!requestId) return
+    activeSearchId.current = null
+    api.cancelRequest(requestId)
+    setSearching(false)
+    setSearchCancelled(true)
+  }
+
+  async function searchTopic(): Promise<void> {
+    if (!active || !selectedTopic || !search.trim() || loadingMessages) return
+    cancelSearch()
+    const requestId = `kafka-search-${active.id}-${++searchRequest.current}`
+    activeSearchId.current = requestId
+    setSearching(true)
+    setSearchResults([])
+    setSearchScanned(0)
+    setSearchCancelled(false)
+    setError(null)
+    try {
+      const result = await api.searchKafkaMessages(
+        active.id,
+        { topic: selectedTopic, query: search, limit },
+        requestId,
+        (progress) => {
+          if (activeSearchId.current !== requestId) return
+          setSearchResults(progress.messages)
+          setSearchScanned(progress.scanned)
+        },
+      )
+      if (activeSearchId.current !== requestId) return
+      setSearchResults(result.messages)
+      setSearchScanned(result.scanned)
+    } catch (reason) {
+      if (activeSearchId.current !== requestId) return
+      if (errorMessage(reason) === 'Request cancelled') {
+        setSearchCancelled(true)
+      } else {
+        setSearchResults(null)
+        setSearchScanned(0)
+        setError(errorMessage(reason))
+      }
+    } finally {
+      if (activeSearchId.current === requestId) {
+        activeSearchId.current = null
+        setSearching(false)
+      }
+    }
+  }
+
+  useEffect(() => () => {
+    if (activeSearchId.current) api.cancelRequest(activeSearchId.current)
+  }, [])
 
   async function createTopic(input: KafkaTopicCreateInput): Promise<boolean> {
     if (!active) return false
@@ -834,15 +900,24 @@ export function KafkaWorkspace({ onClose }: { onClose: () => void }) {
             <section className="kafka-messages">
               <div className="kafka-section-heading">
                 <h2>{selectedTopic || 'Select a topic'}</h2>
-                <span className="muted">{visibleMessages.length} / {messages.length} messages</span>
+                <span className="muted">
+                  {searchResults === null
+                    ? `${visibleMessages.length} / ${messages.length} messages`
+                    : `${visibleMessages.length} search results`}
+                </span>
               </div>
               <div className="kafka-message-tools">
                 <input
                   className="input"
-                  placeholder="Search text in loaded messages…"
+                  placeholder="Search loaded messages or search the whole topic…"
                   value={search}
-                  onChange={(event) => setSearch(event.target.value)}
-                  disabled={!messages.length}
+                  onChange={(event) => {
+                    cancelSearch()
+                    setSearch(event.target.value)
+                    setSearchResults(null)
+                    setSearchScanned(0)
+                  }}
+                  disabled={!messages.length && !selectedTopic}
                 />
                 <select
                   className="input kafka-limit"
@@ -858,6 +933,16 @@ export function KafkaWorkspace({ onClose }: { onClose: () => void }) {
                 >
                   {loadingMessages ? 'Loading…' : 'Load recent'}
                 </button>
+                <button
+                  className="btn btn-primary"
+                  onClick={() => void searchTopic()}
+                  disabled={!selectedTopic || !search.trim() || searching || loadingMessages}
+                >
+                  Search topic
+                </button>
+                {searching && (
+                  <button className="btn" onClick={cancelSearch}>Cancel</button>
+                )}
                 <button className="btn" onClick={() => selectedTopic && void openTopicDetail(selectedTopic)} disabled={!selectedTopic}>
                   Details
                 </button>
@@ -865,6 +950,13 @@ export function KafkaWorkspace({ onClose }: { onClose: () => void }) {
                   Send event
                 </button>
               </div>
+              {searchResults !== null && (
+                <div className="muted kafka-search-status">
+                  {searching ? 'Searching full topic history' : searchCancelled ? 'Search cancelled' : 'Search complete'}
+                  {' · '}{searchScanned.toLocaleString()} messages scanned
+                  {' · '}{searchResults.length} shown
+                </div>
+              )}
               <div className="kafka-message-list">
                 {visibleMessages.map((message) => (
                   <details className="kafka-message" key={`${message.topic}-${message.partition}-${message.offset}`}>
@@ -885,10 +977,13 @@ export function KafkaWorkspace({ onClose }: { onClose: () => void }) {
                     </div>
                   </details>
                 ))}
-                {selectedTopic && !loadingMessages && messages.length === 0 && (
+                {selectedTopic && !loadingMessages && searchResults === null && messages.length === 0 && (
                   <div className="muted kafka-empty-messages">No recent messages in this topic</div>
                 )}
-                {messages.length > 0 && visibleMessages.length === 0 && (
+                {searchResults !== null && !searching && visibleMessages.length === 0 && (
+                  <div className="muted kafka-empty-messages">No messages match this search</div>
+                )}
+                {searchResults === null && messages.length > 0 && visibleMessages.length === 0 && (
                   <div className="muted kafka-empty-messages">No messages match this search</div>
                 )}
               </div>

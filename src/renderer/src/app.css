@@ -501,6 +501,10 @@ body {
   width: 82px;
 }
 
+.kafka-search-status {
+  font-size: 11px;
+}
+
 .kafka-message-list {
   display: flex;
   flex-direction: column;

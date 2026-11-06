@@ -46,6 +46,13 @@ export interface KafkaMessage {
   headers: Record<string, string | null>
 }
 
+export interface KafkaSearchProgress {
+  messages: KafkaMessage[]
+  scanned: number
+}
+
+export type KafkaSearchResult = KafkaSearchProgress
+
 export interface KafkaPartitionInfo {
   partition: number
   leader: number | null

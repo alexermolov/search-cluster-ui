@@ -3,6 +3,7 @@ import { Kafka, logLevel, type Consumer, type EachMessagePayload } from 'kafkajs
 import type {
   KafkaMessageProduceInput,
   KafkaMessagesInput,
+  KafkaSearchInput,
   KafkaTopicCreateInput,
 } from '../shared/ipc'
 import type {
@@ -11,6 +12,8 @@ import type {
   KafkaConsumerGroupInfo,
   KafkaConsumerGroupMember,
   KafkaMessage,
+  KafkaSearchProgress,
+  KafkaSearchResult,
   KafkaPartitionInfo,
   KafkaTopicInfo,
   StoredKafkaConnection,
@@ -18,6 +21,9 @@ import type {
 
 export type KafkaConnection = KafkaConnectionInput | StoredKafkaConnection
 const KAFKA_OFFSET_CONCURRENCY = 8
+const KAFKA_SEARCH_PROGRESS_INTERVAL_MS = 500
+const KAFKA_SEARCH_IDLE_TIMEOUT_MS = 3_000
+const KAFKA_SEARCH_BATCH_YIELD_SIZE = 1_000
 
 function hashString(input: string): string {
   return createHash('sha256').update(input).digest('hex').slice(0, 8)
@@ -444,7 +450,11 @@ function decode(buffer: Buffer | null): string | null {
   }
 }
 
-function toKafkaMessage({ topic, partition, message }: EachMessagePayload): KafkaMessage {
+function toKafkaMessage({
+  topic,
+  partition,
+  message,
+}: Pick<EachMessagePayload, 'topic' | 'partition' | 'message'>): KafkaMessage {
   const headers: Record<string, string | null> = {}
   for (const [key, value] of Object.entries(message.headers ?? {})) {
     headers[key] = Array.isArray(value)
@@ -460,6 +470,46 @@ function toKafkaMessage({ topic, partition, message }: EachMessagePayload): Kafk
     value: decode(message.value),
     headers,
   }
+}
+
+function compareKafkaMessages(
+  a: Pick<KafkaMessage, 'timestamp' | 'offset' | 'partition'>,
+  b: Pick<KafkaMessage, 'timestamp' | 'offset' | 'partition'>,
+): number {
+  const timeDiff = Number(b.timestamp ?? 0) - Number(a.timestamp ?? 0)
+  if (timeDiff) return timeDiff
+  const offsetA = BigInt(a.offset)
+  const offsetB = BigInt(b.offset)
+  return offsetA > offsetB ? -1 : offsetA < offsetB ? 1 : a.partition - b.partition
+}
+
+function kafkaMessageMatches(
+  topic: string,
+  partition: number,
+  message: EachMessagePayload['message'],
+  query: string,
+): boolean {
+  const matches = (value: string | Buffer | null | undefined) => {
+    if (value == null) return false
+    const text = typeof value === 'string' ? value : value.toString('utf8')
+    return text.toLowerCase().includes(query)
+  }
+
+  if (topic.toLowerCase().includes(query)) return true
+  if (
+    matches(message.key) ||
+    matches(message.value) ||
+    message.timestamp.toLowerCase().includes(query) ||
+    message.offset.includes(query) ||
+    String(partition).includes(query)
+  ) {
+    return true
+  }
+  return Object.entries(message.headers ?? {}).some(
+    ([key, value]) =>
+      key.toLowerCase().includes(query) ||
+      (Array.isArray(value) ? value.some(matches) : matches(value)),
+  )
 }
 
 export async function fetchKafkaMessages(
@@ -579,13 +629,7 @@ export async function fetchKafkaMessages(
       signal?.removeEventListener('abort', onAbort)
     }
 
-    return messages.sort((a, b) => {
-      const timeDiff = Number(b.timestamp ?? 0) - Number(a.timestamp ?? 0)
-      if (timeDiff) return timeDiff
-      const offsetA = BigInt(a.offset)
-      const offsetB = BigInt(b.offset)
-      return offsetA > offsetB ? -1 : offsetA < offsetB ? 1 : a.partition - b.partition
-    })
+    return messages.sort(compareKafkaMessages)
   } finally {
     try {
       if (consumer) {
@@ -597,3 +641,162 @@ export async function fetchKafkaMessages(
     }
   }
 }
+
+export async function searchKafkaMessages(
+    cache: KafkaClientCache,
+    config: KafkaConnection,
+    { topic, query, limit }: KafkaSearchInput,
+    signal: AbortSignal | undefined,
+    onProgress: (progress: KafkaSearchProgress) => void,
+  ): Promise<KafkaSearchResult> {
+    const normalizedTopic = topic.trim()
+    const normalizedQuery = query.trim().toLowerCase()
+    if (!normalizedTopic) throw new Error('A Kafka topic is required')
+    if (!normalizedQuery) throw new Error('A search query is required')
+    if (!Number.isInteger(limit) || limit < 1 || limit > 100)
+      throw new Error('Search result limit must be between 1 and 100')
+    if (signal?.aborted) throw new Error('Request cancelled')
+
+    const client = cache.get(config)
+    const admin = await client.admin()
+    const connectionId = ('id' in config && config.id) ? config.id : 'draft'
+    const groupId = `search-cluster-ui-${connectionId.slice(0, 8)}-${hashString(normalizedTopic)}-search`
+    let consumer: Consumer | undefined
+
+    try {
+      const offsets = await admin.fetchTopicOffsets(normalizedTopic)
+      if (!offsets.length) throw new Error(`Topic "${normalizedTopic}" has no partitions`)
+
+      const starts = new Map(offsets.map((item) => [item.partition, BigInt(item.low)]))
+      const ends = new Map(offsets.map((item) => [item.partition, BigInt(item.high)]))
+      const finished = new Set<number>()
+      const messages: KafkaMessage[] = []
+      let scanned = 0
+      let completed = false
+      let resolveDone!: () => void
+      let rejectDone!: (reason: Error) => void
+      let idleTimer: ReturnType<typeof setTimeout> | null = null
+      let progressTimer: ReturnType<typeof setInterval> | null = null
+      let lastReportedScanned = -1
+
+      const done = new Promise<void>((resolve, reject) => {
+        resolveDone = resolve
+        rejectDone = reject
+      })
+      consumer = client.kafka.consumer({ groupId })
+
+      const flushProgress = () => {
+        if (scanned === lastReportedScanned) return
+        lastReportedScanned = scanned
+        onProgress({ messages: messages.slice(), scanned })
+      }
+      const clearTimers = () => {
+        if (idleTimer) clearTimeout(idleTimer)
+        if (progressTimer) clearInterval(progressTimer)
+      }
+      const finish = (error?: Error) => {
+        if (completed) return
+        completed = true
+        clearTimers()
+        void consumer?.stop().then(
+          () => (error ? rejectDone(error) : resolveDone()),
+          (reason: unknown) =>
+            rejectDone(reason instanceof Error ? reason : new Error(String(reason))),
+        )
+      }
+      const resetIdleTimer = () => {
+        if (idleTimer) clearTimeout(idleTimer)
+        idleTimer = setTimeout(finish, KAFKA_SEARCH_IDLE_TIMEOUT_MS)
+      }
+      const onAbort = () => finish(new Error('Request cancelled'))
+
+      await consumer.connect()
+      await consumer.subscribe({ topic: normalizedTopic, fromBeginning: true })
+      signal?.addEventListener('abort', onAbort)
+      if (signal?.aborted) onAbort()
+      progressTimer = setInterval(flushProgress, KAFKA_SEARCH_PROGRESS_INTERVAL_MS)
+      resetIdleTimer()
+
+      consumer.on(consumer.events.GROUP_JOIN, ({ payload }) => {
+        const assigned = payload.memberAssignment[normalizedTopic] ?? []
+        for (const partition of assigned) {
+          const start = starts.get(partition)
+          const end = ends.get(partition)
+          if (start === undefined || end === undefined || start >= end) {
+            finished.add(partition)
+          } else {
+            consumer?.seek({ topic: normalizedTopic, partition, offset: start.toString() })
+          }
+        }
+        if (assigned.length === 0 || finished.size === offsets.length) finish()
+        else resetIdleTimer()
+      })
+
+      void consumer.run({
+        autoCommit: false,
+        partitionsConsumedConcurrently: Math.min(offsets.length, KAFKA_OFFSET_CONCURRENCY),
+        eachBatch: async ({ batch, resolveOffset, heartbeat, isRunning, isStale }) => {
+          resetIdleTimer()
+          const start = starts.get(batch.partition)
+          const end = ends.get(batch.partition)
+          if (start === undefined || end === undefined) return
+
+          let sinceYield = 0
+          for (const message of batch.messages) {
+            if (!isRunning() || isStale() || completed) return
+            const offset = BigInt(message.offset)
+            if (offset >= start && offset < end) {
+              scanned += 1
+              if (kafkaMessageMatches(normalizedTopic, batch.partition, message, normalizedQuery)) {
+                const candidatePosition = {
+                  timestamp: message.timestamp || null,
+                  offset: message.offset,
+                  partition: batch.partition,
+                }
+                let low = 0
+                let high = messages.length
+                while (low < high) {
+                  const middle = Math.floor((low + high) / 2)
+                  if (compareKafkaMessages(candidatePosition, messages[middle]) < 0) high = middle
+                  else low = middle + 1
+                }
+                if (low < limit) {
+                  messages.splice(
+                    low,
+                    0,
+                    toKafkaMessage({ topic: normalizedTopic, partition: batch.partition, message }),
+                  )
+                  if (messages.length > limit) messages.pop()
+                }
+              }
+              if (offset + 1n >= end) finished.add(batch.partition)
+            }
+            resolveOffset(message.offset)
+            sinceYield += 1
+            if (sinceYield >= KAFKA_SEARCH_BATCH_YIELD_SIZE) {
+              sinceYield = 0
+              await heartbeat()
+              await new Promise<void>((resolve) => setImmediate(resolve))
+            }
+          }
+          resetIdleTimer()
+          if (finished.size === offsets.length) finish()
+        },
+      }).catch((reason: unknown) => {
+        if (!completed) finish(reason instanceof Error ? reason : new Error(String(reason)))
+      })
+
+      try {
+        await done
+        flushProgress()
+      } finally {
+        signal?.removeEventListener('abort', onAbort)
+      }
+      return { messages, scanned }
+    } finally {
+      if (consumer) {
+        await consumer.stop().catch(() => undefined)
+        await consumer.disconnect().catch(() => undefined)
+      }
+    }
+  }

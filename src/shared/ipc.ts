@@ -19,6 +19,8 @@ import type {
   BulkResult,
   MsearchResults,
   KafkaMessage,
+  KafkaSearchProgress,
+  KafkaSearchResult,
   KafkaTopicInfo,
   StoredKafkaConnection,
   KafkaPartitionInfo,
@@ -93,6 +95,8 @@ export const IPC = {
   KafkaTopicPartitions: 'kafka:topic-partitions',
   KafkaConsumerGroups: 'kafka:consumer-groups',
   KafkaMessages: 'kafka:messages',
+  KafkaSearch: 'kafka:search',
+  KafkaSearchProgress: 'kafka:search-progress',
   KafkaMessageProduce: 'kafka:message-produce',
   RedisConnectionsList: 'redis:connections-list',
   RedisConnectionsSave: 'redis:connections-save',
@@ -157,6 +161,14 @@ export interface MsearchInput {
 export interface KafkaMessagesInput {
   topic: string
   limit: number
+}
+
+export interface KafkaSearchInput extends KafkaMessagesInput {
+  query: string
+}
+
+export interface KafkaSearchProgressEvent extends KafkaSearchProgress {
+  requestId: string
 }
 
 export interface KafkaTopicCreateInput {
@@ -364,6 +376,12 @@ export interface ElectronApi {
   fetchKafkaTopicPartitions(connectionId: string, topic: string): Promise<KafkaPartitionInfo[]>
   fetchKafkaConsumerGroups(connectionId: string, topic?: string): Promise<KafkaConsumerGroupInfo[]>
   fetchKafkaMessages(connectionId: string, input: KafkaMessagesInput, requestId?: string): Promise<KafkaMessage[]>
+  searchKafkaMessages(
+    connectionId: string,
+    input: KafkaSearchInput,
+    requestId: string,
+    onProgress: (progress: KafkaSearchProgress) => void,
+  ): Promise<KafkaSearchResult>
   produceKafkaMessage(connectionId: string, input: KafkaMessageProduceInput): Promise<void>
   listRedisConnections(): Promise<StoredRedisConnection[]>
   saveRedisConnection(input: RedisConnectionInput): Promise<StoredRedisConnection>

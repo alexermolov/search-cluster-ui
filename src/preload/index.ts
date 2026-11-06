@@ -1,5 +1,5 @@
 import { contextBridge, ipcRenderer } from 'electron'
-import { IPC, type ElectronApi } from '../shared/ipc'
+import { IPC, type ElectronApi, type KafkaSearchProgressEvent } from '../shared/ipc'
 
 /**
  * The only bridge between the renderer and the main process.
@@ -107,6 +107,15 @@ const api: ElectronApi = {
     ipcRenderer.invoke(IPC.KafkaConsumerGroups, connectionId, topic),
   fetchKafkaMessages: (connectionId, input, requestId) =>
     ipcRenderer.invoke(IPC.KafkaMessages, connectionId, input, requestId),
+  searchKafkaMessages: (connectionId, input, requestId, onProgress) => {
+    const listener = (_event: Electron.IpcRendererEvent, progress: KafkaSearchProgressEvent) => {
+      if (progress.requestId === requestId) onProgress(progress)
+    }
+    ipcRenderer.on(IPC.KafkaSearchProgress, listener)
+    return ipcRenderer
+      .invoke(IPC.KafkaSearch, connectionId, input, requestId)
+      .finally(() => ipcRenderer.removeListener(IPC.KafkaSearchProgress, listener))
+  },
   produceKafkaMessage: (connectionId, input) =>
     ipcRenderer.invoke(IPC.KafkaMessageProduce, connectionId, input),
   listRedisConnections: () => ipcRenderer.invoke(IPC.RedisConnectionsList),
