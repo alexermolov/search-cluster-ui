@@ -162,8 +162,8 @@ export async function fetchKafkaMessages(
   { topic, limit }: KafkaMessagesInput,
 ): Promise<KafkaMessage[]> {
   if (!topic.trim()) throw new Error('A Kafka topic is required')
-  if (!Number.isInteger(limit) || limit < 1 || limit > 1000)
-    throw new Error('Message limit must be between 1 and 1000')
+  if (!Number.isInteger(limit) || limit < 1 || limit > 100)
+    throw new Error('Message limit must be between 1 and 100')
 
   const kafka = createKafka(config)
   const admin = kafka.admin()

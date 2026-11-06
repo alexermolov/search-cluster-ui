@@ -438,7 +438,7 @@ export function KafkaWorkspace({ onClose }: { onClose: () => void }) {
   const [selectedTopic, setSelectedTopic] = useState('')
   const [messages, setMessages] = useState<KafkaMessage[]>([])
   const [search, setSearch] = useState('')
-  const [limit, setLimit] = useState(100)
+  const [limit, setLimit] = useState(20)
   const [loadingTopics, setLoadingTopics] = useState(false)
   const [loadingMessages, setLoadingMessages] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -674,7 +674,7 @@ export function KafkaWorkspace({ onClose }: { onClose: () => void }) {
                   value={limit}
                   onChange={(event) => setLimit(Number(event.target.value))}
                 >
-                  {[50, 100, 250, 500, 1000].map((count) => <option key={count} value={count}>{count}</option>)}
+                  {[10, 20, 50, 100].map((count) => <option key={count} value={count}>{count}</option>)}
                 </select>
                 <button
                   className="btn"
@@ -689,21 +689,23 @@ export function KafkaWorkspace({ onClose }: { onClose: () => void }) {
               </div>
               <div className="kafka-message-list">
                 {visibleMessages.map((message) => (
-                  <article className="kafka-message" key={`${message.topic}-${message.partition}-${message.offset}`}>
-                    <div className="kafka-message-meta">
+                  <details className="kafka-message" key={`${message.topic}-${message.partition}-${message.offset}`}>
+                    <summary className="kafka-message-meta">
                       <span>Partition {message.partition}</span>
                       <span>Offset {message.offset}</span>
                       <span>{message.timestamp ? new Date(Number(message.timestamp)).toLocaleString() : 'No timestamp'}</span>
                       {message.key !== null && <span>Key: {message.key}</span>}
+                    </summary>
+                    <div className="kafka-message-body">
+                      {message.value === null ? <pre>(null value)</pre> : <KafkaJsonViewer value={message.value} />}
+                      {Object.keys(message.headers).length > 0 && (
+                        <details>
+                          <summary>Headers ({Object.keys(message.headers).length})</summary>
+                          <KafkaJsonViewer value={JSON.stringify(message.headers, null, 2)} />
+                        </details>
+                      )}
                     </div>
-                    {message.value === null ? <pre>(null value)</pre> : <KafkaJsonViewer value={message.value} />}
-                    {Object.keys(message.headers).length > 0 && (
-                      <details>
-                        <summary>Headers ({Object.keys(message.headers).length})</summary>
-                        <KafkaJsonViewer value={JSON.stringify(message.headers, null, 2)} />
-                      </details>
-                    )}
-                  </article>
+                  </details>
                 ))}
                 {selectedTopic && !loadingMessages && messages.length === 0 && (
                   <div className="muted kafka-empty-messages">No recent messages in this topic</div>

@@ -27,6 +27,61 @@ const NEW_CONNECTION: RedisConnectionInput = {
   timeoutMs: 10_000,
 }
 
+const REDIS_COMMANDS = [
+  ['APPEND', 'APPEND key value'],
+  ['AUTH', 'AUTH password'],
+  ['BITCOUNT', 'BITCOUNT key [start end]'],
+  ['CLIENT', 'CLIENT subcommand'],
+  ['DBSIZE', 'DBSIZE'],
+  ['DECR', 'DECR key'],
+  ['DEL', 'DEL key [key ...]'],
+  ['EXISTS', 'EXISTS key [key ...]'],
+  ['EXPIRE', 'EXPIRE key seconds'],
+  ['EXPIREAT', 'EXPIREAT key timestamp'],
+  ['FLUSHDB', 'FLUSHDB'],
+  ['GET', 'GET key'],
+  ['GETDEL', 'GETDEL key'],
+  ['GETEX', 'GETEX key [EX seconds]'],
+  ['GETRANGE', 'GETRANGE key start end'],
+  ['HDEL', 'HDEL key field [field ...]'],
+  ['HEXISTS', 'HEXISTS key field'],
+  ['HGET', 'HGET key field'],
+  ['HGETALL', 'HGETALL key'],
+  ['HKEYS', 'HKEYS key'],
+  ['HMGET', 'HMGET key field [field ...]'],
+  ['HMSET', 'HMSET key field value [field value ...]'],
+  ['HSET', 'HSET key field value [field value ...]'],
+  ['HVALS', 'HVALS key'],
+  ['INCR', 'INCR key'],
+  ['INFO', 'INFO [section]'],
+  ['KEYS', 'KEYS pattern'],
+  ['LLEN', 'LLEN key'],
+  ['LPOP', 'LPOP key [count]'],
+  ['LPUSH', 'LPUSH key element [element ...]'],
+  ['LRANGE', 'LRANGE key start stop'],
+  ['PING', 'PING [message]'],
+  ['PUBLISH', 'PUBLISH channel message'],
+  ['PTTL', 'PTTL key'],
+  ['RENAME', 'RENAME key newkey'],
+  ['RPOP', 'RPOP key [count]'],
+  ['RPUSH', 'RPUSH key element [element ...]'],
+  ['SCAN', 'SCAN cursor [MATCH pattern] [COUNT count]'],
+  ['SET', 'SET key value [EX seconds] [NX|XX]'],
+  ['SADD', 'SADD key member [member ...]'],
+  ['SCARD', 'SCARD key'],
+  ['SISMEMBER', 'SISMEMBER key member'],
+  ['SMEMBERS', 'SMEMBERS key'],
+  ['SREM', 'SREM key member [member ...]'],
+  ['STRLEN', 'STRLEN key'],
+  ['TTL', 'TTL key'],
+  ['TYPE', 'TYPE key'],
+  ['UNLINK', 'UNLINK key [key ...]'],
+  ['ZADD', 'ZADD key score member [score member ...]'],
+  ['ZCARD', 'ZCARD key'],
+  ['ZRANGE', 'ZRANGE key start stop [WITHSCORES]'],
+  ['ZREM', 'ZREM key member [member ...]'],
+] as const
+
 interface ConnectionFormProps {
   connection: StoredRedisConnection | null
   onClose: () => void
@@ -515,6 +570,8 @@ export function RedisWorkspace({ onClose }: { onClose: () => void }) {
   const [selectedKey, setSelectedKey] = useState<RedisKeyDetail | null>(null)
   const [server, setServer] = useState<RedisServerInfo | null>(null)
   const [command, setCommand] = useState('')
+  const [activeCommandSuggestion, setActiveCommandSuggestion] = useState(0)
+  const [commandSuggestionsDismissed, setCommandSuggestionsDismissed] = useState(false)
   const [commandOutput, setCommandOutput] = useState<Array<{ command: string; result: unknown; error?: string }>>([])
   const [loadingKeys, setLoadingKeys] = useState(false)
   const [loadingDetail, setLoadingDetail] = useState(false)
@@ -526,9 +583,26 @@ export function RedisWorkspace({ onClose }: { onClose: () => void }) {
   const keyRequest = useRef(0)
   const detailRequest = useRef(0)
   const serverRequest = useRef(0)
+  const commandInput = useRef<HTMLTextAreaElement>(null)
 
   const active = connections.find((connection) => connection.id === activeId) ?? null
   const visibleKeys = keys
+  const commandPrefix = command.match(/^\s*(\S+)$/)?.[1] ?? null
+  const commandSuggestions = commandPrefix && !commandSuggestionsDismissed
+    ? REDIS_COMMANDS.filter(([name]) => name.startsWith(commandPrefix.toUpperCase())).slice(0, 8)
+    : []
+
+  function completeCommand(name: string): void {
+    const leadingWhitespace = command.match(/^\s*/)?.[0] ?? ''
+    const completed = `${leadingWhitespace}${name} `
+    setCommand(completed)
+    setActiveCommandSuggestion(0)
+    setCommandSuggestionsDismissed(false)
+    requestAnimationFrame(() => {
+      commandInput.current?.focus()
+      commandInput.current?.setSelectionRange(completed.length, completed.length)
+    })
+  }
 
   async function reloadKeys(connectionId: string, append = false, filter = keyPattern): Promise<void> {
     const request = ++keyRequest.current
@@ -900,13 +974,59 @@ export function RedisWorkspace({ onClose }: { onClose: () => void }) {
                     void executeCommand()
                   }}
                 >
-                  <textarea
-                    className="input mono redis-command-input"
-                    value={command}
-                    onChange={(event) => setCommand(event.target.value)}
-                    placeholder={'PING'}
-                    spellCheck={false}
-                  />
+                  <div className="redis-command-editor">
+                    <textarea
+                      ref={commandInput}
+                      className="input mono redis-command-input"
+                      value={command}
+                      onChange={(event) => {
+                        setCommand(event.target.value)
+                        setActiveCommandSuggestion(0)
+                        setCommandSuggestionsDismissed(false)
+                      }}
+                      onKeyDown={(event) => {
+                        if (!commandSuggestions.length) return
+                        if (event.key === 'ArrowDown') {
+                          event.preventDefault()
+                          setActiveCommandSuggestion((index) => (index + 1) % commandSuggestions.length)
+                        } else if (event.key === 'ArrowUp') {
+                          event.preventDefault()
+                          setActiveCommandSuggestion(
+                            (index) => (index - 1 + commandSuggestions.length) % commandSuggestions.length,
+                          )
+                        } else if (event.key === 'Tab' || event.key === 'Enter') {
+                          event.preventDefault()
+                          completeCommand(commandSuggestions[activeCommandSuggestion][0])
+                        } else if (event.key === 'Escape') {
+                          setCommandSuggestionsDismissed(true)
+                        }
+                      }}
+                      placeholder="PING"
+                      spellCheck={false}
+                      role="combobox"
+                      aria-autocomplete="list"
+                      aria-expanded={commandSuggestions.length > 0}
+                      aria-controls="redis-command-suggestions"
+                    />
+                    {commandSuggestions.length > 0 && (
+                      <div className="redis-command-suggestions" id="redis-command-suggestions" role="listbox">
+                        {commandSuggestions.map(([name, syntax], index) => (
+                          <button
+                            className={`redis-command-suggestion${index === activeCommandSuggestion ? ' active' : ''}`}
+                            key={name}
+                            type="button"
+                            role="option"
+                            aria-selected={index === activeCommandSuggestion}
+                            onMouseDown={(event) => event.preventDefault()}
+                            onClick={() => completeCommand(name)}
+                          >
+                            <span>{name}</span>
+                            <span className="muted">{syntax}</span>
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
                   <button className="btn btn-primary" type="submit" disabled={runningCommand || !command.trim()}>
                     {runningCommand ? 'Running…' : 'Run'}
                   </button>

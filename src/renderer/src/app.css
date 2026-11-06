@@ -503,11 +503,18 @@ body {
   background: var(--bg-panel);
 }
 
+.kafka-message > summary {
+  cursor: pointer;
+}
+
+.kafka-message[open] > summary {
+  margin-bottom: 8px;
+}
+
 .kafka-message-meta {
   display: flex;
   flex-wrap: wrap;
   gap: 8px 14px;
-  margin-bottom: 8px;
   color: var(--text-dim);
   font: 11px var(--mono);
 }
@@ -529,12 +536,12 @@ body {
   border-color: var(--border-soft);
 }
 
-.kafka-message details {
+.kafka-message-body details {
   margin-top: 8px;
   color: var(--text-dim);
 }
 
-.kafka-message details pre {
+.kafka-message-body details pre {
   margin-top: 6px;
 }
 
@@ -760,11 +767,57 @@ body {
   gap: 10px;
 }
 
-.redis-command-input {
+.redis-command-editor {
+  position: relative;
   flex: 1;
+  min-width: 0;
+}
+
+.redis-command-input {
+  width: 100%;
   min-height: 74px;
   resize: vertical;
   font: 12px/1.5 var(--mono);
+}
+
+.redis-command-suggestions {
+  position: absolute;
+  z-index: 5;
+  top: calc(100% + 4px);
+  right: 0;
+  left: 0;
+  max-height: 240px;
+  overflow: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg-elevated);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3);
+}
+
+.redis-command-suggestion {
+  display: flex;
+  width: 100%;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 8px 10px;
+  border: 0;
+  background: transparent;
+  color: var(--text);
+  cursor: pointer;
+  text-align: left;
+  font: 11px var(--mono);
+}
+
+.redis-command-suggestion:hover,
+.redis-command-suggestion.active {
+  background: var(--bg-panel);
+}
+
+.redis-command-suggestion .muted {
+  overflow: hidden;
+  color: var(--text-dim);
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .redis-command-history {
