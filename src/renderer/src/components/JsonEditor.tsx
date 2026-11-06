@@ -2,7 +2,7 @@ import { useEffect, useRef } from 'react'
 import { basicSetup } from 'codemirror'
 import { json } from '@codemirror/lang-json'
 import { oneDark } from '@codemirror/theme-one-dark'
-import { Compartment, Prec } from '@codemirror/state'
+import { Compartment, EditorState, Prec } from '@codemirror/state'
 import { EditorView, keymap, placeholder as cmPlaceholder } from '@codemirror/view'
 import { autocompletion } from '@codemirror/autocomplete'
 import type { CompletionSource } from '@codemirror/autocomplete'
@@ -14,6 +14,7 @@ interface Props {
   onRun?: () => void
   placeholder?: string
   minHeight?: string
+  readOnly?: boolean
   /** Optional completion source (e.g. index field autocompletion). */
   completions?: CompletionSource
 }
@@ -28,6 +29,7 @@ export function JsonEditor({
   onRun,
   placeholder,
   minHeight = '160px',
+  readOnly = false,
   completions
 }: Props) {
   const hostRef = useRef<HTMLDivElement | null>(null)
@@ -56,6 +58,8 @@ export function JsonEditor({
       extensions: [
         basicSetup,
         json(),
+        EditorState.readOnly.of(readOnly),
+        EditorView.editable.of(!readOnly),
         themeCompartment.current.of(theme === 'dark' ? oneDark : []),
         EditorView.lineWrapping,
         placeholder !== undefined ? cmPlaceholder(placeholder) : [],

@@ -97,8 +97,12 @@ const api: ElectronApi = {
   deleteKafkaConnection: (id) => ipcRenderer.invoke(IPC.KafkaConnectionsDelete, id),
   testKafkaConnection: (input) => ipcRenderer.invoke(IPC.KafkaConnectionsTest, input),
   listKafkaTopics: (connectionId) => ipcRenderer.invoke(IPC.KafkaTopics, connectionId),
+  createKafkaTopic: (connectionId, input) =>
+    ipcRenderer.invoke(IPC.KafkaTopicCreate, connectionId, input),
   fetchKafkaMessages: (connectionId, input) =>
     ipcRenderer.invoke(IPC.KafkaMessages, connectionId, input),
+  produceKafkaMessage: (connectionId, input) =>
+    ipcRenderer.invoke(IPC.KafkaMessageProduce, connectionId, input),
   listRedisConnections: () => ipcRenderer.invoke(IPC.RedisConnectionsList),
   saveRedisConnection: (input) => ipcRenderer.invoke(IPC.RedisConnectionsSave, input),
   deleteRedisConnection: (id) => ipcRenderer.invoke(IPC.RedisConnectionsDelete, id),

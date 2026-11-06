@@ -86,7 +86,9 @@ export const IPC = {
   KafkaConnectionsDelete: 'kafka:connections-delete',
   KafkaConnectionsTest: 'kafka:connections-test',
   KafkaTopics: 'kafka:topics',
+  KafkaTopicCreate: 'kafka:topic-create',
   KafkaMessages: 'kafka:messages',
+  KafkaMessageProduce: 'kafka:message-produce',
   RedisConnectionsList: 'redis:connections-list',
   RedisConnectionsSave: 'redis:connections-save',
   RedisConnectionsDelete: 'redis:connections-delete',
@@ -150,6 +152,18 @@ export interface MsearchInput {
 export interface KafkaMessagesInput {
   topic: string
   limit: number
+}
+
+export interface KafkaTopicCreateInput {
+  topic: string
+  numPartitions: number
+  replicationFactor: number
+}
+
+export interface KafkaMessageProduceInput {
+  topic: string
+  key: string | null
+  value: string
 }
 
 export interface RedisKeysScanInput {
@@ -340,7 +354,9 @@ export interface ElectronApi {
   deleteKafkaConnection(id: string): Promise<void>
   testKafkaConnection(input: KafkaConnectionInput): Promise<{ brokers: number; clusterId: string }>
   listKafkaTopics(connectionId: string): Promise<KafkaTopicInfo[]>
+  createKafkaTopic(connectionId: string, input: KafkaTopicCreateInput): Promise<boolean>
   fetchKafkaMessages(connectionId: string, input: KafkaMessagesInput): Promise<KafkaMessage[]>
+  produceKafkaMessage(connectionId: string, input: KafkaMessageProduceInput): Promise<void>
   listRedisConnections(): Promise<StoredRedisConnection[]>
   saveRedisConnection(input: RedisConnectionInput): Promise<StoredRedisConnection>
   deleteRedisConnection(id: string): Promise<void>

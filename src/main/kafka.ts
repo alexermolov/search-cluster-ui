@@ -1,5 +1,9 @@
 import { Kafka, logLevel, type Consumer, type EachMessagePayload } from 'kafkajs'
-import type { KafkaMessagesInput } from '../shared/ipc'
+import type {
+  KafkaMessageProduceInput,
+  KafkaMessagesInput,
+  KafkaTopicCreateInput,
+} from '../shared/ipc'
 import type {
   KafkaAuthConfig,
   KafkaConnectionInput,
@@ -81,6 +85,47 @@ export async function listKafkaTopics(config: KafkaConnection): Promise<KafkaTop
       .sort((a, b) => a.name.localeCompare(b.name))
   } finally {
     await admin.disconnect()
+  }
+}
+
+export async function createKafkaTopic(
+  config: KafkaConnection,
+  { topic, numPartitions, replicationFactor }: KafkaTopicCreateInput,
+): Promise<boolean> {
+  if (!topic.trim()) throw new Error('A Kafka topic name is required')
+  if (!Number.isInteger(numPartitions) || numPartitions < 1)
+    throw new Error('Partition count must be a positive integer')
+  if (!Number.isInteger(replicationFactor) || replicationFactor < 1)
+    throw new Error('Replication factor must be a positive integer')
+
+  const admin = createKafka(config).admin()
+  try {
+    await admin.connect()
+    return await admin.createTopics({
+      topics: [{ topic: topic.trim(), numPartitions, replicationFactor }],
+      waitForLeaders: true,
+    })
+  } finally {
+    await admin.disconnect()
+  }
+}
+
+export async function produceKafkaMessage(
+  config: KafkaConnection,
+  { topic, key, value }: KafkaMessageProduceInput,
+): Promise<void> {
+  if (!topic.trim()) throw new Error('A Kafka topic is required')
+  if (!value) throw new Error('A message value is required')
+
+  const producer = createKafka(config).producer()
+  try {
+    await producer.connect()
+    await producer.send({
+      topic: topic.trim(),
+      messages: [{ ...(key !== null ? { key } : {}), value }],
+    })
+  } finally {
+    await producer.disconnect()
   }
 }
 

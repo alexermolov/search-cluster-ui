@@ -6,7 +6,9 @@ import {
   IPC,
   type BulkInput,
   type ExplainInput,
+  type KafkaMessageProduceInput,
   type KafkaMessagesInput,
+  type KafkaTopicCreateInput,
   type MsearchInput,
   type RedisKeysScanInput,
   type RerouteInput,
@@ -29,8 +31,10 @@ import type { ConnectionStore } from './store/connections'
 import type { KafkaConnectionStore } from './store/kafka-connections'
 import type { RedisConnectionStore } from './store/redis-connections'
 import {
+  createKafkaTopic,
   fetchKafkaMessages,
   listKafkaTopics,
+  produceKafkaMessage,
   testKafkaConnection,
 } from './kafka'
 import {
@@ -146,8 +150,14 @@ export function registerIpcHandlers(
     testKafkaConnection(input),
   )
   ipcMain.handle(IPC.KafkaTopics, (_e, id: string) => listKafkaTopics(kafkaConfigFor(id)))
+  ipcMain.handle(IPC.KafkaTopicCreate, (_e, id: string, input: KafkaTopicCreateInput) =>
+    createKafkaTopic(kafkaConfigFor(id), input),
+  )
   ipcMain.handle(IPC.KafkaMessages, (_e, id: string, input: KafkaMessagesInput) =>
     fetchKafkaMessages(kafkaConfigFor(id), input),
+  )
+  ipcMain.handle(IPC.KafkaMessageProduce, (_e, id: string, input: KafkaMessageProduceInput) =>
+    produceKafkaMessage(kafkaConfigFor(id), input),
   )
   ipcMain.handle(IPC.RedisConnectionsList, () => redisStore.list())
   ipcMain.handle(IPC.RedisConnectionsSave, (_e, input: RedisConnectionInput) =>

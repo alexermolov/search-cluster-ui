@@ -8,7 +8,12 @@ import type {
   KafkaTlsConfig,
   StoredKafkaConnection,
 } from '../../../shared/types'
+import type {
+  KafkaMessageProduceInput,
+  KafkaTopicCreateInput,
+} from '../../../shared/ipc'
 import { api, errorMessage } from '../api'
+import { JsonEditor } from './JsonEditor'
 
 const EMPTY_TLS: KafkaTlsConfig = {
   enabled: false,
@@ -276,6 +281,155 @@ function KafkaConnectionForm({ connection, onClose, onSave }: KafkaConnectionFor
   )
 }
 
+function KafkaTopicCreateDialog({
+  onClose,
+  onCreate,
+}: {
+  onClose: () => void
+  onCreate: (input: KafkaTopicCreateInput) => Promise<boolean>
+}) {
+  const [topic, setTopic] = useState('')
+  const [numPartitions, setNumPartitions] = useState(1)
+  const [replicationFactor, setReplicationFactor] = useState(1)
+  const [creating, setCreating] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  async function submit(): Promise<void> {
+    if (!topic.trim()) {
+      setError('A topic name is required')
+      return
+    }
+    if (!Number.isInteger(numPartitions) || numPartitions < 1) {
+      setError('Partition count must be a positive integer')
+      return
+    }
+    if (!Number.isInteger(replicationFactor) || replicationFactor < 1) {
+      setError('Replication factor must be a positive integer')
+      return
+    }
+
+    setCreating(true)
+    setError(null)
+    try {
+      const created = await onCreate({ topic: topic.trim(), numPartitions, replicationFactor })
+      if (created) onClose()
+      else setError(`Topic "${topic.trim()}" already exists`)
+    } catch (reason) {
+      setError(errorMessage(reason))
+    } finally {
+      setCreating(false)
+    }
+  }
+
+  return (
+    <div className="modal-backdrop" onMouseDown={(event) => {
+      if (event.target === event.currentTarget) onClose()
+    }}>
+      <div className="modal kafka-action-modal">
+        <h2>Create Kafka topic</h2>
+        <label className="field">
+          <span>Topic name</span>
+          <input className="input mono" autoFocus value={topic} onChange={(event) => setTopic(event.target.value)} />
+        </label>
+        <div className="field-row">
+          <label className="field">
+            <span>Partitions</span>
+            <input className="input" type="number" min={1} step={1} value={numPartitions}
+              onChange={(event) => setNumPartitions(Number(event.target.value))} />
+          </label>
+          <label className="field">
+            <span>Replication factor</span>
+            <input className="input" type="number" min={1} step={1} value={replicationFactor}
+              onChange={(event) => setReplicationFactor(Number(event.target.value))} />
+          </label>
+        </div>
+        {error && <div className="banner banner-error">{error}</div>}
+        <div className="modal-footer">
+          <span className="spacer" />
+          <button className="btn" onClick={onClose}>Cancel</button>
+          <button className="btn btn-primary" onClick={() => void submit()} disabled={creating}>
+            {creating ? 'Creating…' : 'Create topic'}
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function KafkaProduceDialog({
+  topic,
+  onClose,
+  onSend,
+}: {
+  topic: string
+  onClose: () => void
+  onSend: (input: KafkaMessageProduceInput) => Promise<void>
+}) {
+  const [key, setKey] = useState('')
+  const [value, setValue] = useState('{\n  \n}')
+  const [sending, setSending] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  async function submit(): Promise<void> {
+    try {
+      JSON.parse(value)
+    } catch {
+      setError('Message value must be valid JSON')
+      return
+    }
+    setSending(true)
+    setError(null)
+    try {
+      await onSend({ topic, key: key || null, value })
+      onClose()
+    } catch (reason) {
+      setError(errorMessage(reason))
+    } finally {
+      setSending(false)
+    }
+  }
+
+  return (
+    <div className="modal-backdrop" onMouseDown={(event) => {
+      if (event.target === event.currentTarget) onClose()
+    }}>
+      <div className="modal kafka-action-modal kafka-produce-modal">
+        <h2>Send event to {topic}</h2>
+        <label className="field">
+          <span>Key (optional)</span>
+          <input className="input mono" value={key} onChange={(event) => setKey(event.target.value)} />
+        </label>
+        <div className="field">
+          <span>JSON value</span>
+          <JsonEditor value={value} onChange={setValue} onRun={() => void submit()}
+            placeholder="Enter a JSON value" minHeight="180px" />
+        </div>
+        {error && <div className="banner banner-error">{error}</div>}
+        <div className="modal-footer">
+          <span className="spacer" />
+          <button className="btn" onClick={onClose}>Cancel</button>
+          <button className="btn btn-primary" onClick={() => void submit()} disabled={sending}>
+            {sending ? 'Sending…' : 'Send event'}
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function KafkaJsonViewer({ value }: { value: string }) {
+  try {
+    JSON.parse(value)
+  } catch {
+    return <pre>{value}</pre>
+  }
+  return (
+    <div className="kafka-json-view">
+      <JsonEditor value={value} onChange={() => undefined} readOnly minHeight="90px" />
+    </div>
+  )
+}
+
 export function KafkaWorkspace({ onClose }: { onClose: () => void }) {
   const [connections, setConnections] = useState<StoredKafkaConnection[]>([])
   const [activeId, setActiveId] = useState<string | null>(null)
@@ -288,7 +442,10 @@ export function KafkaWorkspace({ onClose }: { onClose: () => void }) {
   const [loadingTopics, setLoadingTopics] = useState(false)
   const [loadingMessages, setLoadingMessages] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [notice, setNotice] = useState<string | null>(null)
   const [editor, setEditor] = useState<StoredKafkaConnection | null | undefined>(undefined)
+  const [creatingTopic, setCreatingTopic] = useState(false)
+  const [producing, setProducing] = useState(false)
   const topicRequest = useRef(0)
   const messageRequest = useRef(0)
 
@@ -387,6 +544,27 @@ export function KafkaWorkspace({ onClose }: { onClose: () => void }) {
     }
   }
 
+  async function createTopic(input: KafkaTopicCreateInput): Promise<boolean> {
+    if (!active) return false
+    setError(null)
+    setNotice(null)
+    const created = await api.createKafkaTopic(active.id, input)
+    if (created) {
+      await reloadTopics(active.id)
+      setSelectedTopic(input.topic)
+      setNotice(`Topic "${input.topic}" created`)
+    }
+    return created
+  }
+
+  async function produceMessage(input: KafkaMessageProduceInput): Promise<void> {
+    if (!active) throw new Error('No Kafka connection selected')
+    setError(null)
+    setNotice(null)
+    await api.produceKafkaMessage(active.id, input)
+    setNotice(`Event sent to "${input.topic}"`)
+  }
+
   return (
     <div className="app">
       <aside className="sidebar kafka-sidebar">
@@ -439,6 +617,7 @@ export function KafkaWorkspace({ onClose }: { onClose: () => void }) {
         </header>
 
         {error && <div className="banner banner-error kafka-error">{error}</div>}
+        {notice && <div className="banner banner-ok kafka-notice">{notice}</div>}
 
         {!active ? (
           <div className="empty-state kafka-empty">
@@ -451,7 +630,10 @@ export function KafkaWorkspace({ onClose }: { onClose: () => void }) {
             <section className="kafka-topics">
               <div className="kafka-section-heading">
                 <h2>Topics</h2>
-                <span className="muted">{topics.length}</span>
+                <div className="kafka-topic-actions">
+                  <span className="muted">{topics.length}</span>
+                  <button className="btn" onClick={() => setCreatingTopic(true)}>+ Create</button>
+                </div>
               </div>
               <input
                 className="input"
@@ -501,6 +683,9 @@ export function KafkaWorkspace({ onClose }: { onClose: () => void }) {
                 >
                   {loadingMessages ? 'Loading…' : 'Load recent'}
                 </button>
+                <button className="btn btn-primary" onClick={() => setProducing(true)} disabled={!selectedTopic}>
+                  Send event
+                </button>
               </div>
               <div className="kafka-message-list">
                 {visibleMessages.map((message) => (
@@ -511,11 +696,11 @@ export function KafkaWorkspace({ onClose }: { onClose: () => void }) {
                       <span>{message.timestamp ? new Date(Number(message.timestamp)).toLocaleString() : 'No timestamp'}</span>
                       {message.key !== null && <span>Key: {message.key}</span>}
                     </div>
-                    <pre>{message.value ?? '(null value)'}</pre>
+                    {message.value === null ? <pre>(null value)</pre> : <KafkaJsonViewer value={message.value} />}
                     {Object.keys(message.headers).length > 0 && (
                       <details>
                         <summary>Headers ({Object.keys(message.headers).length})</summary>
-                        <pre>{JSON.stringify(message.headers, null, 2)}</pre>
+                        <KafkaJsonViewer value={JSON.stringify(message.headers, null, 2)} />
                       </details>
                     )}
                   </article>
@@ -538,6 +723,12 @@ export function KafkaWorkspace({ onClose }: { onClose: () => void }) {
           onClose={() => setEditor(undefined)}
           onSave={save}
         />
+      )}
+      {creatingTopic && (
+        <KafkaTopicCreateDialog onClose={() => setCreatingTopic(false)} onCreate={createTopic} />
+      )}
+      {producing && selectedTopic && (
+        <KafkaProduceDialog topic={selectedTopic} onClose={() => setProducing(false)} onSend={produceMessage} />
       )}
     </div>
   )
