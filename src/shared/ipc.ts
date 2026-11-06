@@ -21,6 +21,8 @@ import type {
   KafkaMessage,
   KafkaTopicInfo,
   StoredKafkaConnection,
+  KafkaPartitionInfo,
+  KafkaConsumerGroupInfo,
   RedisConnectionInput,
   RedisKeyDetail,
   RedisKeyPage,
@@ -87,6 +89,9 @@ export const IPC = {
   KafkaConnectionsTest: 'kafka:connections-test',
   KafkaTopics: 'kafka:topics',
   KafkaTopicCreate: 'kafka:topic-create',
+  KafkaTopicDelete: 'kafka:topic-delete',
+  KafkaTopicPartitions: 'kafka:topic-partitions',
+  KafkaConsumerGroups: 'kafka:consumer-groups',
   KafkaMessages: 'kafka:messages',
   KafkaMessageProduce: 'kafka:message-produce',
   RedisConnectionsList: 'redis:connections-list',
@@ -355,6 +360,9 @@ export interface ElectronApi {
   testKafkaConnection(input: KafkaConnectionInput): Promise<{ brokers: number; clusterId: string }>
   listKafkaTopics(connectionId: string): Promise<KafkaTopicInfo[]>
   createKafkaTopic(connectionId: string, input: KafkaTopicCreateInput): Promise<boolean>
+  deleteKafkaTopic(connectionId: string, topic: string): Promise<void>
+  fetchKafkaTopicPartitions(connectionId: string, topic: string): Promise<KafkaPartitionInfo[]>
+  fetchKafkaConsumerGroups(connectionId: string): Promise<KafkaConsumerGroupInfo[]>
   fetchKafkaMessages(connectionId: string, input: KafkaMessagesInput): Promise<KafkaMessage[]>
   produceKafkaMessage(connectionId: string, input: KafkaMessageProduceInput): Promise<void>
   listRedisConnections(): Promise<StoredRedisConnection[]>

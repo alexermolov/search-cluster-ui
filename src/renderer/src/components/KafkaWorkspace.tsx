@@ -7,6 +7,8 @@ import type {
   KafkaTopicInfo,
   KafkaTlsConfig,
   StoredKafkaConnection,
+  KafkaPartitionInfo,
+  KafkaConsumerGroupInfo,
 } from '../../../shared/types'
 import type {
   KafkaMessageProduceInput,
@@ -430,6 +432,123 @@ function KafkaJsonViewer({ value }: { value: string }) {
   )
 }
 
+function KafkaTopicDetailDialog({
+  topic,
+  partitions,
+  consumerGroups,
+  loading,
+  onClose,
+}: {
+  topic: string
+  partitions: KafkaPartitionInfo[]
+  consumerGroups: KafkaConsumerGroupInfo[]
+  loading: boolean
+  onClose: () => void
+}) {
+  const [tab, setTab] = useState<'partitions' | 'groups'>('partitions')
+
+  const topicGroups = useMemo(() => {
+    return consumerGroups.filter((g) => topic in g.lag)
+  }, [consumerGroups, topic])
+
+  return (
+    <div className="modal-backdrop" onMouseDown={(event) => {
+      if (event.target === event.currentTarget) onClose()
+    }}>
+      <div className="modal kafka-detail-modal">
+        <h2>Topic: {topic}</h2>
+        <div className="kafka-detail-tabs">
+          <button className={`kafka-detail-tab${tab === 'partitions' ? ' active' : ''}`} onClick={() => setTab('partitions')}>
+            Partitions ({partitions.length})
+          </button>
+          <button className={`kafka-detail-tab${tab === 'groups' ? ' active' : ''}`} onClick={() => setTab('groups')}>
+            Consumer Groups ({topicGroups.length})
+          </button>
+        </div>
+
+        {loading && <div className="muted">Loading…</div>}
+
+        {!loading && tab === 'partitions' && (
+          <div style={{ overflow: 'auto' }}>
+            <table className="kafka-partition-table">
+              <thead>
+                <tr>
+                  <th>Partition</th>
+                  <th>Leader</th>
+                  <th>Replicas</th>
+                  <th>ISR</th>
+                  <th>Low Offset</th>
+                  <th>High Offset</th>
+                </tr>
+              </thead>
+              <tbody>
+                {partitions.map((p) => (
+                  <tr key={p.partition}>
+                    <td>{p.partition}</td>
+                    <td>{p.leader ?? '-'}</td>
+                    <td>{p.replicas.join(', ')}</td>
+                    <td>{p.isr.join(', ')}</td>
+                    <td>{p.lowOffset}</td>
+                    <td>{p.highOffset}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+
+        {!loading && tab === 'groups' && (
+          <div style={{ overflow: 'auto' }}>
+            {topicGroups.length === 0 && (
+              <div className="kafka-empty-groups">No consumer groups for this topic</div>
+            )}
+            {topicGroups.map((group) => (
+              <div className="kafka-consumer-group" key={group.groupId}>
+                <div className="kafka-consumer-group-header">
+                  <span className="group-id">{group.groupId}</span>
+                  <span className={`group-state state-${group.state.toLowerCase()}`}>{group.state}</span>
+                </div>
+                <div className="kafka-consumer-group-body">
+                  <div className="group-members">
+                    Protocol: {group.protocol || '—'} · Members: {group.members.length}
+                  </div>
+                  {group.lag[topic] && Object.keys(group.lag[topic]).length > 0 && (
+                    <table className="kafka-lag-table">
+                      <thead>
+                        <tr>
+                          <th>Partition</th>
+                          <th>Lag</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {Object.entries(group.lag[topic])
+                          .sort(([a], [b]) => Number(a) - Number(b))
+                          .map(([partition, lag]) => (
+                            <tr key={partition}>
+                              <td>{partition}</td>
+                              <td className={lag > 1000 ? 'lag-high' : lag > 100 ? 'lag-medium' : 'lag-low'}>
+                                {lag.toLocaleString()}
+                              </td>
+                            </tr>
+                          ))}
+                      </tbody>
+                    </table>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+
+        <div className="modal-footer">
+          <span className="spacer" />
+          <button className="btn" onClick={onClose}>Close</button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 export function KafkaWorkspace({ onClose }: { onClose: () => void }) {
   const [connections, setConnections] = useState<StoredKafkaConnection[]>([])
   const [activeId, setActiveId] = useState<string | null>(null)
@@ -446,6 +565,10 @@ export function KafkaWorkspace({ onClose }: { onClose: () => void }) {
   const [editor, setEditor] = useState<StoredKafkaConnection | null | undefined>(undefined)
   const [creatingTopic, setCreatingTopic] = useState(false)
   const [producing, setProducing] = useState(false)
+  const [detailTopic, setDetailTopic] = useState<string | null>(null)
+  const [partitions, setPartitions] = useState<KafkaPartitionInfo[]>([])
+  const [consumerGroups, setConsumerGroups] = useState<KafkaConsumerGroupInfo[]>([])
+  const [loadingDetail, setLoadingDetail] = useState(false)
   const topicRequest = useRef(0)
   const messageRequest = useRef(0)
 
@@ -557,6 +680,45 @@ export function KafkaWorkspace({ onClose }: { onClose: () => void }) {
     return created
   }
 
+  async function removeTopic(topic: string): Promise<void> {
+    if (!active) return
+    if (!window.confirm(`Delete topic "${topic}"? This action cannot be undone.`)) return
+    setError(null)
+    setNotice(null)
+    try {
+      await api.deleteKafkaTopic(active.id, topic)
+      setNotice(`Topic "${topic}" deleted`)
+      if (selectedTopic === topic) {
+        setSelectedTopic('')
+        setMessages([])
+      }
+      await reloadTopics(active.id)
+    } catch (reason) {
+      setError(errorMessage(reason))
+    }
+  }
+
+  async function openTopicDetail(topic: string): Promise<void> {
+    if (!active) return
+    setDetailTopic(topic)
+    setPartitions([])
+    setConsumerGroups([])
+    setLoadingDetail(true)
+    setError(null)
+    try {
+      const [parts, groups] = await Promise.all([
+        api.fetchKafkaTopicPartitions(active.id, topic),
+        api.fetchKafkaConsumerGroups(active.id),
+      ])
+      setPartitions(parts)
+      setConsumerGroups(groups)
+    } catch (reason) {
+      setError(errorMessage(reason))
+    } finally {
+      setLoadingDetail(false)
+    }
+  }
+
   async function produceMessage(input: KafkaMessageProduceInput): Promise<void> {
     if (!active) throw new Error('No Kafka connection selected')
     setError(null)
@@ -643,14 +805,23 @@ export function KafkaWorkspace({ onClose }: { onClose: () => void }) {
               />
               <div className="kafka-topic-list">
                 {visibleTopics.map((topic) => (
-                  <button
+                  <div
                     key={topic.name}
-                    className={`kafka-topic${selectedTopic === topic.name ? ' active' : ''}`}
-                    onClick={() => void loadMessages(topic.name)}
+                    className={`kafka-topic-row${selectedTopic === topic.name ? ' active' : ''}`}
                   >
-                    <span>{topic.name}</span>
-                    <span className="muted">{topic.partitions}p</span>
-                  </button>
+                    <span
+                      className="topic-name"
+                      onClick={() => void loadMessages(topic.name)}
+                      title="Load messages"
+                    >
+                      {topic.name}
+                    </span>
+                    <span className="topic-meta muted">{topic.partitions}p</span>
+                    <span className="topic-actions">
+                      <button title="Topic details" onClick={() => void openTopicDetail(topic.name)}>ℹ</button>
+                      <button title="Delete topic" onClick={() => void removeTopic(topic.name)}>✕</button>
+                    </span>
+                  </div>
                 ))}
                 {!loadingTopics && topics.length === 0 && <div className="muted kafka-empty-topics">No topics found</div>}
               </div>
@@ -682,6 +853,9 @@ export function KafkaWorkspace({ onClose }: { onClose: () => void }) {
                   disabled={!selectedTopic || loadingMessages}
                 >
                   {loadingMessages ? 'Loading…' : 'Load recent'}
+                </button>
+                <button className="btn" onClick={() => selectedTopic && void openTopicDetail(selectedTopic)} disabled={!selectedTopic}>
+                  Details
                 </button>
                 <button className="btn btn-primary" onClick={() => setProducing(true)} disabled={!selectedTopic}>
                   Send event
@@ -731,6 +905,15 @@ export function KafkaWorkspace({ onClose }: { onClose: () => void }) {
       )}
       {producing && selectedTopic && (
         <KafkaProduceDialog topic={selectedTopic} onClose={() => setProducing(false)} onSend={produceMessage} />
+      )}
+      {detailTopic && (
+        <KafkaTopicDetailDialog
+          topic={detailTopic}
+          partitions={partitions}
+          consumerGroups={consumerGroups}
+          loading={loadingDetail}
+          onClose={() => setDetailTopic(null)}
+        />
       )}
     </div>
   )

@@ -2447,3 +2447,208 @@ button.dropdown-item {
   color: var(--text-dim);
   white-space: nowrap;
 }
+
+/* ---------- Kafka topic details & consumer groups ---------- */
+
+.kafka-topic-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: none;
+  color: var(--text);
+  text-align: left;
+  font: inherit;
+  cursor: pointer;
+}
+
+.kafka-topic-row:hover,
+.kafka-topic-row.active {
+  background: var(--bg-elevated);
+  border-color: var(--border);
+}
+
+.kafka-topic-row .topic-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 1;
+}
+
+.kafka-topic-row .topic-meta {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.kafka-topic-row .topic-actions {
+  display: none;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+.kafka-topic-row:hover .topic-actions {
+  display: flex;
+}
+
+.kafka-topic-row .topic-actions button {
+  padding: 2px 6px;
+  font-size: 11px;
+  background: var(--bg-panel);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  color: var(--text);
+  cursor: pointer;
+}
+
+.kafka-topic-row .topic-actions button:hover {
+  background: var(--bg-elevated);
+  border-color: var(--danger);
+  color: var(--danger);
+}
+
+.kafka-detail-tabs {
+  display: flex;
+  gap: 2px;
+  border-bottom: 1px solid var(--border-soft);
+  margin-bottom: 12px;
+}
+
+.kafka-detail-tab {
+  padding: 8px 14px;
+  font-size: 12px;
+  background: none;
+  border: none;
+  border-bottom: 2px solid transparent;
+  color: var(--text-dim);
+  cursor: pointer;
+}
+
+.kafka-detail-tab:hover {
+  color: var(--text);
+}
+
+.kafka-detail-tab.active {
+  color: var(--accent);
+  border-bottom-color: var(--accent);
+}
+
+.kafka-partition-table {
+  width: 100%;
+  border-collapse: collapse;
+  font: 12px var(--mono);
+}
+
+.kafka-partition-table th,
+.kafka-partition-table td {
+  padding: 8px 10px;
+  text-align: left;
+  border-bottom: 1px solid var(--border-soft);
+}
+
+.kafka-partition-table th {
+  color: var(--text-dim);
+  font-weight: 600;
+  font-size: 11px;
+  text-transform: uppercase;
+}
+
+.kafka-partition-table td {
+  color: var(--text);
+}
+
+.kafka-consumer-group {
+  margin-bottom: 16px;
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius);
+  background: var(--bg-panel);
+}
+
+.kafka-consumer-group-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--border-soft);
+}
+
+.kafka-consumer-group-header .group-id {
+  font-weight: 600;
+  font-size: 13px;
+}
+
+.kafka-consumer-group-header .group-state {
+  font-size: 11px;
+  padding: 2px 8px;
+  border-radius: 10px;
+  background: var(--bg-elevated);
+  color: var(--text-dim);
+}
+
+.kafka-consumer-group-header .group-state.state-stable {
+  background: rgba(34, 197, 94, 0.15);
+  color: #22c55e;
+}
+
+.kafka-consumer-group-header .group-state.state-dead {
+  background: rgba(239, 68, 68, 0.15);
+  color: #ef4444;
+}
+
+.kafka-consumer-group-body {
+  padding: 10px 12px;
+}
+
+.kafka-consumer-group-body .group-members {
+  font-size: 12px;
+  color: var(--text-dim);
+  margin-bottom: 10px;
+}
+
+.kafka-lag-table {
+  width: 100%;
+  border-collapse: collapse;
+  font: 12px var(--mono);
+}
+
+.kafka-lag-table th,
+.kafka-lag-table td {
+  padding: 6px 8px;
+  text-align: left;
+  border-bottom: 1px solid var(--border-soft);
+}
+
+.kafka-lag-table th {
+  color: var(--text-dim);
+  font-weight: 600;
+  font-size: 11px;
+}
+
+.kafka-lag-table .lag-high {
+  color: #ef4444;
+  font-weight: 600;
+}
+
+.kafka-lag-table .lag-medium {
+  color: #f59e0b;
+}
+
+.kafka-lag-table .lag-low {
+  color: #22c55e;
+}
+
+.kafka-empty-groups {
+  padding: 24px;
+  text-align: center;
+  color: var(--text-dim);
+}
+
+.kafka-detail-modal {
+  width: min(800px, 94vw);
+  max-height: 85vh;
+  overflow: auto;
+}

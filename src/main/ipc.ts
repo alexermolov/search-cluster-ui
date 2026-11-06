@@ -32,7 +32,10 @@ import type { KafkaConnectionStore } from './store/kafka-connections'
 import type { RedisConnectionStore } from './store/redis-connections'
 import {
   createKafkaTopic,
+  deleteKafkaTopic,
+  fetchKafkaConsumerGroups,
   fetchKafkaMessages,
+  fetchKafkaTopicPartitions,
   listKafkaTopics,
   produceKafkaMessage,
   testKafkaConnection,
@@ -152,6 +155,15 @@ export function registerIpcHandlers(
   ipcMain.handle(IPC.KafkaTopics, (_e, id: string) => listKafkaTopics(kafkaConfigFor(id)))
   ipcMain.handle(IPC.KafkaTopicCreate, (_e, id: string, input: KafkaTopicCreateInput) =>
     createKafkaTopic(kafkaConfigFor(id), input),
+  )
+  ipcMain.handle(IPC.KafkaTopicDelete, (_e, id: string, topic: string) =>
+    deleteKafkaTopic(kafkaConfigFor(id), topic),
+  )
+  ipcMain.handle(IPC.KafkaTopicPartitions, (_e, id: string, topic: string) =>
+    fetchKafkaTopicPartitions(kafkaConfigFor(id), topic),
+  )
+  ipcMain.handle(IPC.KafkaConsumerGroups, (_e, id: string) =>
+    fetchKafkaConsumerGroups(kafkaConfigFor(id)),
   )
   ipcMain.handle(IPC.KafkaMessages, (_e, id: string, input: KafkaMessagesInput) =>
     fetchKafkaMessages(kafkaConfigFor(id), input),

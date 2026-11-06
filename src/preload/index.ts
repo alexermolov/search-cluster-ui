@@ -99,6 +99,12 @@ const api: ElectronApi = {
   listKafkaTopics: (connectionId) => ipcRenderer.invoke(IPC.KafkaTopics, connectionId),
   createKafkaTopic: (connectionId, input) =>
     ipcRenderer.invoke(IPC.KafkaTopicCreate, connectionId, input),
+  deleteKafkaTopic: (connectionId, topic) =>
+    ipcRenderer.invoke(IPC.KafkaTopicDelete, connectionId, topic),
+  fetchKafkaTopicPartitions: (connectionId, topic) =>
+    ipcRenderer.invoke(IPC.KafkaTopicPartitions, connectionId, topic),
+  fetchKafkaConsumerGroups: (connectionId) =>
+    ipcRenderer.invoke(IPC.KafkaConsumerGroups, connectionId),
   fetchKafkaMessages: (connectionId, input) =>
     ipcRenderer.invoke(IPC.KafkaMessages, connectionId, input),
   produceKafkaMessage: (connectionId, input) =>

@@ -46,6 +46,30 @@ export interface KafkaMessage {
   headers: Record<string, string | null>
 }
 
+export interface KafkaPartitionInfo {
+  partition: number
+  leader: number | null
+  replicas: number[]
+  isr: number[]
+  lowOffset: string
+  highOffset: string
+}
+
+export interface KafkaConsumerGroupMember {
+  clientId: string
+  clientHost: string
+  memberId: string
+  assignments: Array<{ topic: string; partitions: number[] }>
+}
+
+export interface KafkaConsumerGroupInfo {
+  groupId: string
+  protocol: string
+  state: string
+  members: KafkaConsumerGroupMember[]
+  lag: Record<string, Record<string, number>>
+}
+
 export type RedisTopology = 'standalone' | 'cluster' | 'sentinel'
 
 export interface RedisTlsConfig {

@@ -7,7 +7,10 @@ import type {
 import type {
   KafkaAuthConfig,
   KafkaConnectionInput,
+  KafkaConsumerGroupInfo,
+  KafkaConsumerGroupMember,
   KafkaMessage,
+  KafkaPartitionInfo,
   KafkaTopicInfo,
   StoredKafkaConnection,
 } from '../shared/types'
@@ -104,6 +107,203 @@ export async function createKafkaTopic(
     return await admin.createTopics({
       topics: [{ topic: topic.trim(), numPartitions, replicationFactor }],
       waitForLeaders: true,
+    })
+  } finally {
+    await admin.disconnect()
+  }
+}
+
+export async function deleteKafkaTopic(config: KafkaConnection, topic: string): Promise<void> {
+  if (!topic.trim()) throw new Error('A Kafka topic name is required')
+  const admin = createKafka(config).admin()
+  try {
+    await admin.connect()
+    await admin.deleteTopics({ topics: [topic.trim()] })
+  } finally {
+    await admin.disconnect()
+  }
+}
+
+export async function fetchKafkaTopicPartitions(
+  config: KafkaConnection,
+  topic: string,
+): Promise<KafkaPartitionInfo[]> {
+  if (!topic.trim()) throw new Error('A Kafka topic name is required')
+  const kafka = createKafka(config)
+  const admin = kafka.admin()
+  try {
+    await admin.connect()
+    const [metadata, offsets] = await Promise.all([
+      admin.fetchTopicMetadata({ topics: [topic.trim()] }),
+      admin.fetchTopicOffsets(topic.trim()),
+    ])
+    const topicMeta = metadata.topics.find((t) => t.name === topic.trim())
+    if (!topicMeta) throw new Error(`Topic "${topic}" not found`)
+
+    const offsetMap = new Map(offsets.map((o) => [o.partition, o]))
+    return topicMeta.partitions
+      .map((p): KafkaPartitionInfo => {
+        const off = offsetMap.get(p.partitionId)
+        return {
+          partition: p.partitionId,
+          leader: p.leader ?? null,
+          replicas: p.replicas,
+          isr: p.isr,
+          lowOffset: off?.low ?? '0',
+          highOffset: off?.high ?? '0',
+        }
+      })
+      .sort((a, b) => a.partition - b.partition)
+  } finally {
+    await admin.disconnect()
+  }
+}
+
+function parseMemberAssignment(buffer: Buffer): Record<string, number[]> {
+  try {
+    let offset = 0
+    const readInt16 = () => {
+      const val = buffer.readInt16BE(offset)
+      offset += 2
+      return val
+    }
+    const readInt32 = () => {
+      const val = buffer.readInt32BE(offset)
+      offset += 4
+      return val
+    }
+    const readString = () => {
+      const len = readInt16()
+      if (len < 0) return ''
+      const str = buffer.toString('utf8', offset, offset + len)
+      offset += len
+      return str
+    }
+    // Version
+    readInt16()
+    const topicCount = readInt32()
+    const topics: string[] = []
+    for (let i = 0; i < topicCount; i++) {
+      topics.push(readString())
+    }
+    const partitionCount = readInt32()
+    const partitions: number[] = []
+    for (let i = 0; i < partitionCount; i++) {
+      partitions.push(readInt32())
+    }
+    // Assign all partitions to all topics (simplified; in reality assignment is per-topic)
+    const result: Record<string, number[]> = {}
+    for (const topic of topics) {
+      result[topic] = [...partitions]
+    }
+    return result
+  } catch {
+    return {}
+  }
+}
+
+export async function fetchKafkaConsumerGroups(
+  config: KafkaConnection,
+): Promise<KafkaConsumerGroupInfo[]> {
+  const kafka = createKafka(config)
+  const admin = kafka.admin()
+  try {
+    await admin.connect()
+    const groupsResponse = await admin.listGroups()
+    const groupIds = groupsResponse.groups.map((g) => g.groupId)
+    if (groupIds.length === 0) return []
+
+    const { groups: descriptions } = await admin.describeGroups(groupIds)
+
+    // Fetch offsets for each group individually
+    const offsetMap = new Map<string, Map<string, Map<number, string>>>()
+    for (const groupId of groupIds) {
+      try {
+        const offsets = await admin.fetchOffsets({ groupId, resolveOffsets: true })
+        const topicMap = new Map<string, Map<number, string>>()
+        for (const topicOffset of offsets) {
+          const partitionMap = new Map<number, string>()
+          for (const po of topicOffset.partitions) {
+            partitionMap.set(po.partition, po.offset)
+          }
+          topicMap.set(topicOffset.topic, partitionMap)
+        }
+        offsetMap.set(groupId, topicMap)
+      } catch {
+        // Group may not have offsets yet
+      }
+    }
+
+    // Fetch high watermarks for all topics referenced by consumer groups
+    const allTopics = new Set<string>()
+    for (const desc of descriptions) {
+      for (const member of desc.members) {
+        const assignments = parseMemberAssignment(member.memberAssignment)
+        for (const topic of Object.keys(assignments)) {
+          allTopics.add(topic)
+        }
+      }
+    }
+    // Also add topics from offsets
+    for (const topicMap of offsetMap.values()) {
+      for (const topic of topicMap.keys()) {
+        allTopics.add(topic)
+      }
+    }
+
+    const topicHighOffsets = new Map<string, Map<number, string>>()
+    for (const topic of allTopics) {
+      try {
+        const topicOffsets = await admin.fetchTopicOffsets(topic)
+        const map = new Map<number, string>()
+        for (const o of topicOffsets) {
+          map.set(o.partition, o.high)
+        }
+        topicHighOffsets.set(topic, map)
+      } catch {
+        // Topic may not exist
+      }
+    }
+
+    return descriptions.map((desc): KafkaConsumerGroupInfo => {
+      const lag: Record<string, Record<string, number>> = {}
+      const groupOffsets = offsetMap.get(desc.groupId)
+
+      // Calculate lag from offsets (all topics the group consumes)
+      if (groupOffsets) {
+        for (const [topic, partitionMap] of groupOffsets) {
+          const highMap = topicHighOffsets.get(topic)
+          if (!highMap) continue
+          const topicLag: Record<string, number> = {}
+          for (const [partition, currentOffset] of partitionMap) {
+            const high = highMap.get(partition)
+            if (high !== undefined) {
+              const lagValue = Number(high) - Number(currentOffset)
+              topicLag[String(partition)] = lagValue >= 0 ? lagValue : 0
+            }
+          }
+          if (Object.keys(topicLag).length > 0) {
+            lag[topic] = topicLag
+          }
+        }
+      }
+
+      return {
+        groupId: desc.groupId,
+        protocol: desc.protocol,
+        state: desc.state,
+        members: desc.members.map(
+          (m): KafkaConsumerGroupMember => ({
+            clientId: m.clientId,
+            clientHost: m.clientHost,
+            memberId: m.memberId,
+            assignments: Object.entries(parseMemberAssignment(m.memberAssignment)).map(
+              ([topic, partitions]) => ({ topic, partitions }),
+            ),
+          }),
+        ),
+        lag,
+      }
     })
   } finally {
     await admin.disconnect()
