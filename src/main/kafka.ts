@@ -1,4 +1,4 @@
-import { createHash } from 'node:crypto'
+import { createHash, randomUUID } from 'node:crypto'
 import { Kafka, logLevel, type Consumer, type EachMessagePayload } from 'kafkajs'
 import type {
   KafkaMessageProduceInput,
@@ -22,7 +22,7 @@ import type {
 export type KafkaConnection = KafkaConnectionInput | StoredKafkaConnection
 const KAFKA_OFFSET_CONCURRENCY = 8
 const KAFKA_SEARCH_PROGRESS_INTERVAL_MS = 500
-const KAFKA_SEARCH_IDLE_TIMEOUT_MS = 3_000
+const KAFKA_SEARCH_IDLE_TIMEOUT_MS = 30_000
 const KAFKA_SEARCH_BATCH_YIELD_SIZE = 1_000
 
 function hashString(input: string): string {
@@ -660,7 +660,7 @@ export async function searchKafkaMessages(
     const client = cache.get(config)
     const admin = await client.admin()
     const connectionId = ('id' in config && config.id) ? config.id : 'draft'
-    const groupId = `search-cluster-ui-${connectionId.slice(0, 8)}-${hashString(normalizedTopic)}-search`
+    const groupId = `search-cluster-ui-${connectionId.slice(0, 8)}-${hashString(normalizedTopic)}-${randomUUID()}`
     let consumer: Consumer | undefined
 
     try {
@@ -706,7 +706,15 @@ export async function searchKafkaMessages(
       }
       const resetIdleTimer = () => {
         if (idleTimer) clearTimeout(idleTimer)
-        idleTimer = setTimeout(finish, KAFKA_SEARCH_IDLE_TIMEOUT_MS)
+        idleTimer = setTimeout(
+          () =>
+            finish(
+              new Error(
+                `Timed out while scanning "${normalizedTopic}" after reading ${scanned} messages`,
+              ),
+            ),
+          Math.max(KAFKA_SEARCH_IDLE_TIMEOUT_MS, config.timeoutMs * 2),
+        )
       }
       const onAbort = () => finish(new Error('Request cancelled'))
 
@@ -728,7 +736,11 @@ export async function searchKafkaMessages(
             consumer?.seek({ topic: normalizedTopic, partition, offset: start.toString() })
           }
         }
-        if (assigned.length === 0 || finished.size === offsets.length) finish()
+        if (assigned.length === 0) {
+          finish(new Error(`Kafka assigned no partitions for topic "${normalizedTopic}"`))
+        } else if (finished.size === offsets.length) {
+          finish()
+        }
         else resetIdleTimer()
       })
 
