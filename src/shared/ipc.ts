@@ -18,7 +18,17 @@ import type {
   StoredConnection,
   BulkResult,
   MsearchResults,
+  KafkaMessage,
+  KafkaTopicInfo,
+  StoredKafkaConnection,
+  RedisConnectionInput,
+  RedisKeyDetail,
+  RedisKeyPage,
+  RedisKeySaveInput,
+  RedisServerInfo,
+  StoredRedisConnection,
 } from './types'
+import type { KafkaConnectionInput } from './types'
 
 /**
  * Single source of truth for the IPC surface: channel names + the typed API
@@ -71,6 +81,22 @@ export const IPC = {
   ClusterIlmExplain: 'cluster:ilm-explain',
   ClusterDataStreams: 'cluster:data-streams',
   ClusterMsearch: 'cluster:msearch',
+  KafkaConnectionsList: 'kafka:connections-list',
+  KafkaConnectionsSave: 'kafka:connections-save',
+  KafkaConnectionsDelete: 'kafka:connections-delete',
+  KafkaConnectionsTest: 'kafka:connections-test',
+  KafkaTopics: 'kafka:topics',
+  KafkaMessages: 'kafka:messages',
+  RedisConnectionsList: 'redis:connections-list',
+  RedisConnectionsSave: 'redis:connections-save',
+  RedisConnectionsDelete: 'redis:connections-delete',
+  RedisConnectionsTest: 'redis:connections-test',
+  RedisKeysScan: 'redis:keys-scan',
+  RedisKeyGet: 'redis:key-get',
+  RedisKeySave: 'redis:key-save',
+  RedisKeyDelete: 'redis:key-delete',
+  RedisCommand: 'redis:command',
+  RedisServerInfo: 'redis:server-info',
 } as const
 
 /** Payload shape for creating or updating a connection. */
@@ -119,6 +145,17 @@ export interface MsearchInput {
   index: string | null
   /** NDJSON: alternating header/action lines. */
   ndjson: string
+}
+
+export interface KafkaMessagesInput {
+  topic: string
+  limit: number
+}
+
+export interface RedisKeysScanInput {
+  pattern: string
+  cursor: string
+  count: number
 }
 
 /** Payload for creating a snapshot in a repository. */
@@ -298,6 +335,22 @@ export interface ElectronApi {
   /** GET /_data_stream — data streams with their backing indices. */
   dataStreams(connectionId: string, requestId?: string): Promise<DataStreamInfo[]>
   msearch(connectionId: string, input: MsearchInput, requestId?: string): Promise<MsearchResults>
+  listKafkaConnections(): Promise<StoredKafkaConnection[]>
+  saveKafkaConnection(input: KafkaConnectionInput): Promise<StoredKafkaConnection>
+  deleteKafkaConnection(id: string): Promise<void>
+  testKafkaConnection(input: KafkaConnectionInput): Promise<{ brokers: number; clusterId: string }>
+  listKafkaTopics(connectionId: string): Promise<KafkaTopicInfo[]>
+  fetchKafkaMessages(connectionId: string, input: KafkaMessagesInput): Promise<KafkaMessage[]>
+  listRedisConnections(): Promise<StoredRedisConnection[]>
+  saveRedisConnection(input: RedisConnectionInput): Promise<StoredRedisConnection>
+  deleteRedisConnection(id: string): Promise<void>
+  testRedisConnection(input: RedisConnectionInput): Promise<RedisServerInfo>
+  scanRedisKeys(connectionId: string, input: RedisKeysScanInput): Promise<RedisKeyPage>
+  getRedisKey(connectionId: string, key: string): Promise<RedisKeyDetail>
+  saveRedisKey(connectionId: string, input: RedisKeySaveInput): Promise<void>
+  deleteRedisKey(connectionId: string, key: string): Promise<void>
+  runRedisCommand(connectionId: string, command: string): Promise<unknown>
+  fetchRedisServerInfo(connectionId: string): Promise<RedisServerInfo>
 }
 
 declare global {

@@ -5,7 +5,7 @@ import { ConfirmDialog } from './ConfirmDialog'
 
 const FLAVOR_TAG = { elasticsearch: 'ES', opensearch: 'OS' } as const
 
-export function Sidebar() {
+export function Sidebar({ onBack }: { onBack: () => void }) {
   const connections = useApp((s) => s.connections)
   const activeId = useApp((s) => s.activeId)
   const overview = useApp((s) => s.overview)
@@ -40,6 +40,9 @@ export function Sidebar() {
         </button>
       </div>
 
+      <button className="btn btn-block" onClick={onBack}>
+        ← Product selection
+      </button>
       <div className="sidebar-label">Connections</div>
 
       <div className="conn-list">

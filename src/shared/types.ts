@@ -1,5 +1,128 @@
 export type ClusterFlavor = 'elasticsearch' | 'opensearch'
 
+export type KafkaSaslMechanism = 'plain' | 'scram-sha-256' | 'scram-sha-512'
+
+export type KafkaAuthConfig =
+  | { mechanism: 'plain'; username: string; password: string }
+  | { mechanism: 'scram-sha-256'; username: string; password: string }
+  | { mechanism: 'scram-sha-512'; username: string; password: string }
+
+export interface KafkaTlsConfig {
+  enabled: boolean
+  rejectUnauthorized: boolean
+  ca: string
+  cert: string
+  key: string
+  passphrase: string
+}
+
+export interface KafkaConnectionInput {
+  id?: string
+  name: string
+  brokers: string
+  auth: KafkaAuthConfig | null
+  tls: KafkaTlsConfig
+  timeoutMs: number
+}
+
+export interface StoredKafkaConnection extends Omit<KafkaConnectionInput, 'id'> {
+  id: string
+  createdAt: number
+  updatedAt: number
+}
+
+export interface KafkaTopicInfo {
+  name: string
+  partitions: number
+}
+
+export interface KafkaMessage {
+  topic: string
+  partition: number
+  offset: string
+  timestamp: string | null
+  key: string | null
+  value: string | null
+  headers: Record<string, string | null>
+}
+
+export type RedisTopology = 'standalone' | 'cluster' | 'sentinel'
+
+export interface RedisTlsConfig {
+  enabled: boolean
+  rejectUnauthorized: boolean
+  ca: string
+  cert: string
+  key: string
+}
+
+export interface RedisConnectionInput {
+  id?: string
+  name: string
+  topology: RedisTopology
+  host: string
+  port: number
+  db: number
+  nodes: string
+  masterName: string
+  username: string
+  password: string
+  sentinelUsername: string
+  sentinelPassword: string
+  tls: RedisTlsConfig
+  timeoutMs: number
+}
+
+export interface StoredRedisConnection extends Omit<RedisConnectionInput, 'id'> {
+  id: string
+  createdAt: number
+  updatedAt: number
+}
+
+export type RedisKeyType = 'string' | 'hash' | 'list' | 'set' | 'zset' | 'stream' | 'other'
+export type EditableRedisKeyType = Exclude<RedisKeyType, 'stream' | 'other'>
+
+export type RedisKeyValue =
+  | string
+  | Record<string, string>
+  | string[]
+  | Array<{ member: string; score: number }>
+  | Array<{ id: string; fields: string[] }>
+
+export interface RedisKeyEntry {
+  key: string
+  type: RedisKeyType
+  ttlMs: number
+}
+
+export interface RedisKeyDetail extends RedisKeyEntry {
+  value: RedisKeyValue
+}
+
+export type RedisKeySaveInput = {
+  key: string
+  ttlMs: number
+} & (
+  | { type: 'string'; value: string }
+  | { type: 'hash'; value: Record<string, string> }
+  | { type: 'list' | 'set'; value: string[] }
+  | { type: 'zset'; value: Array<{ member: string; score: number }> }
+)
+
+export interface RedisKeyPage {
+  cursor: string
+  keys: RedisKeyEntry[]
+}
+
+export interface RedisServerInfo {
+  version: string
+  mode: string
+  connectedClients: number | null
+  usedMemory: string | null
+  uptimeSeconds: number | null
+  databases: Array<{ name: string; keys: number; expires: number }>
+}
+
 export type AuthConfig =
   | { kind: 'none' }
   | { kind: 'basic'; username: string; password: string }

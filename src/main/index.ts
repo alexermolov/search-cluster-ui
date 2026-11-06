@@ -2,6 +2,8 @@ import path from 'node:path'
 import { app, BrowserWindow } from 'electron'
 import { registerIpcHandlers } from './ipc'
 import { ConnectionStore } from './store/connections'
+import { KafkaConnectionStore } from './store/kafka-connections'
+import { RedisConnectionStore } from './store/redis-connections'
 
 // Set by scripts/dev.mjs when running against the Vite dev server.
 const DEV_RENDERER_URL = process.env.ELECTRON_RENDERER_URL
@@ -37,7 +39,11 @@ function createMainWindow(): BrowserWindow {
 }
 
 app.whenReady().then(() => {
-  registerIpcHandlers(new ConnectionStore())
+  registerIpcHandlers(
+    new ConnectionStore(),
+    new KafkaConnectionStore(),
+    new RedisConnectionStore(),
+  )
 
   createMainWindow()
 

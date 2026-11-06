@@ -6,7 +6,9 @@ import {
   IPC,
   type BulkInput,
   type ExplainInput,
+  type KafkaMessagesInput,
   type MsearchInput,
+  type RedisKeysScanInput,
   type RerouteInput,
   type SaveConnectionInput,
   type SearchInput,
@@ -14,10 +16,32 @@ import {
   type SnapshotCreateInput,
   type SnapshotRestoreInput,
 } from '../shared/ipc'
-import type { ConnectionConfig, StoredConnection } from '../shared/types'
+import type {
+  ConnectionConfig,
+  KafkaConnectionInput,
+  RedisConnectionInput,
+  RedisKeySaveInput,
+  StoredConnection,
+} from '../shared/types'
 import { createClient, type ClusterClient } from './clients'
 import { hitsToCsv, hitsToJson } from './exporters'
 import type { ConnectionStore } from './store/connections'
+import type { KafkaConnectionStore } from './store/kafka-connections'
+import type { RedisConnectionStore } from './store/redis-connections'
+import {
+  fetchKafkaMessages,
+  listKafkaTopics,
+  testKafkaConnection,
+} from './kafka'
+import {
+  deleteRedisKey,
+  fetchRedisServerInfo,
+  getRedisKey,
+  runRedisCommand,
+  saveRedisKey,
+  scanRedisKeys,
+  testRedisConnection,
+} from './redis'
 
 /**
  * Cache of live clients keyed by connection id. Rebuilds a client whenever
@@ -90,14 +114,67 @@ class AbortRegistry {
 }
 
 /** Registers every IPC channel. Called once after app.whenReady(). */
-export function registerIpcHandlers(store: ConnectionStore): void {
+export function registerIpcHandlers(
+  store: ConnectionStore,
+  kafkaStore: KafkaConnectionStore,
+  redisStore: RedisConnectionStore,
+): void {
   const cache = new ClientCache()
   const clientFor = (id: string): ClusterClient => cache.get(id, store.list())
   const aborts = new AbortRegistry()
+  const kafkaConfigFor = (id: string) => {
+    const config = kafkaStore.list().find((connection) => connection.id === id)
+    if (!config) throw new Error(`Kafka connection "${id}" not found`)
+    return config
+  }
+  const redisConfigFor = (id: string) => {
+    const config = redisStore.list().find((connection) => connection.id === id)
+    if (!config) throw new Error(`Redis connection "${id}" not found`)
+    return config
+  }
 
   ipcMain.handle(IPC.RequestCancel, (_e, requestId: string) => {
     aborts.cancel(requestId)
   })
+
+  ipcMain.handle(IPC.KafkaConnectionsList, () => kafkaStore.list())
+  ipcMain.handle(IPC.KafkaConnectionsSave, (_e, input: KafkaConnectionInput) =>
+    kafkaStore.save(input),
+  )
+  ipcMain.handle(IPC.KafkaConnectionsDelete, (_e, id: string) => kafkaStore.delete(id))
+  ipcMain.handle(IPC.KafkaConnectionsTest, (_e, input: KafkaConnectionInput) =>
+    testKafkaConnection(input),
+  )
+  ipcMain.handle(IPC.KafkaTopics, (_e, id: string) => listKafkaTopics(kafkaConfigFor(id)))
+  ipcMain.handle(IPC.KafkaMessages, (_e, id: string, input: KafkaMessagesInput) =>
+    fetchKafkaMessages(kafkaConfigFor(id), input),
+  )
+  ipcMain.handle(IPC.RedisConnectionsList, () => redisStore.list())
+  ipcMain.handle(IPC.RedisConnectionsSave, (_e, input: RedisConnectionInput) =>
+    redisStore.save(input),
+  )
+  ipcMain.handle(IPC.RedisConnectionsDelete, (_e, id: string) => redisStore.delete(id))
+  ipcMain.handle(IPC.RedisConnectionsTest, (_e, input: RedisConnectionInput) =>
+    testRedisConnection(input),
+  )
+  ipcMain.handle(IPC.RedisKeysScan, (_e, id: string, input: RedisKeysScanInput) =>
+    scanRedisKeys(redisConfigFor(id), input),
+  )
+  ipcMain.handle(IPC.RedisKeyGet, (_e, id: string, key: string) =>
+    getRedisKey(redisConfigFor(id), key),
+  )
+  ipcMain.handle(IPC.RedisKeySave, (_e, id: string, input: RedisKeySaveInput) =>
+    saveRedisKey(redisConfigFor(id), input),
+  )
+  ipcMain.handle(IPC.RedisKeyDelete, (_e, id: string, key: string) =>
+    deleteRedisKey(redisConfigFor(id), key),
+  )
+  ipcMain.handle(IPC.RedisCommand, (_e, id: string, command: string) =>
+    runRedisCommand(redisConfigFor(id), command),
+  )
+  ipcMain.handle(IPC.RedisServerInfo, (_e, id: string) =>
+    fetchRedisServerInfo(redisConfigFor(id)),
+  )
 
   ipcMain.handle(IPC.ConnectionsList, () => store.list())
   ipcMain.handle(IPC.ConnectionsSave, (_e, input: SaveConnectionInput) => store.save(input))

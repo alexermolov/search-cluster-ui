@@ -1,7 +1,7 @@
 # Search Cluster UI
 
-Desktop-клиент для подключения и просмотра кластеров **Elasticsearch** и **OpenSearch**:
-обзор здоровья кластера, список индексов с деталями (маппинги, настройки, документы) и консоль запросов.
+Desktop-клиент для **Elasticsearch**, **OpenSearch**, **Apache Kafka** и **Redis**: управление
+кластерами поиска, просмотр Kafka-топиков и Redis-ключей, редактирование данных и консоли запросов.
 
 ## Стек
 
@@ -13,10 +13,12 @@ Desktop-клиент для подключения и просмотра кла�
 | Сборка renderer | Vite 5 | мгновенный HMR, простая конфигурация |
 | Сборка main/preload | esbuild | bundle в CJS за миллисекунды, никаких лишних тулзов |
 | HTTP к кластерам | `node:https` (только main-процесс) | контроль TLS-верификации и таймаутов без зависимостей |
+| Kafka | KafkaJS (только main-процесс) | Kafka-протокол, SASL и TLS без сетевого доступа из renderer |
+| Redis | ioredis (только main-процесс) | Standalone, Cluster и Sentinel, TLS и ACL-аутентификация |
 | AWS SigV4 | собственная реализация (~60 строк) | не тянем aws-sdk ради одной подписи |
 | Хранение подключений | JSON в `userData` + `safeStorage` | пароли шифруются ключами ОС |
 
-Рантайм-зависимости — только `react`, `react-dom`, `zustand`. Всё остальное — devDependencies.
+Рантайм-зависимости — `react`, `react-dom`, `zustand`, `kafkajs` и `ioredis`.
 
 ## Установка
 
@@ -84,10 +86,14 @@ npm install
 npm run dev        # dev-режим: Vite (renderer, HMR) + esbuild watch (main/preload) + Electron
 npm run typecheck  # строгая проверка типов: main/preload и renderer отдельно
 npm run build      # прод-сборка в dist/ (esbuild + vite build)
+npm run dist:win   # Windows NSIS installer -> release/installer/
+npm run package:win # portable Windows app -> release/win/
 npm start          # запуск собранного приложения
 ```
 
 В dev-режиме пересборка main/preload автоматически перезапускает приложение.
+KafkaJS входит в main bundle через esbuild, поэтому дополнительный runtime-файл или шаг упаковки
+для Kafka не требуется. ioredis также включается в main bundle.
 
 ## Возможности
 
@@ -100,6 +106,16 @@ npm start          # запуск собранного приложения
 - **Export**: экспорт всех совпадений запроса в CSV или JSON (scroll, нативный диалог сохранения файла) из панели Query; редактирование документа прямо из результатов (Edit).
 - **Shards**: таблица шардов кластера с фильтром по индексу/ноду и сводкой (primaries / replicas / unassigned).
 - **Snapshots**: снапшоты по всем репозиториям — статус, индексы, время и длительность, с фильтром.
+- **Kafka**: отдельный Kafka browser с несколькими подключениями, проверкой соединения, списком
+  топиков/партиций и загрузкой до 1000 последних сообщений. Поддерживаются открытые подключения,
+  TLS с проверкой сертификата или без неё, пользовательские CA и клиентские сертификаты, а также
+  SASL/PLAIN и SCRAM-SHA-256/SCRAM-SHA-512 (в том числе SASL поверх TLS). Текстовый поиск работает
+  по загруженной выборке; объём выборки задаётся в панели. Сообщения отображают partition, offset,
+  timestamp, key, value и headers.
+- **Redis**: отдельный браузер для Standalone, Cluster и Sentinel с сохранёнными подключениями,
+  ACL-пользователем/паролем, TLS и проверкой соединения. Поиск ключей выполняется через `SCAN`,
+  доступны просмотр и создание/редактирование/удаление String, Hash, List, Set и Sorted Set,
+  настройка TTL, просмотр Stream, консоль Redis-команд и краткая информация о сервере и базах данных.
 
 ## Безопасность
 

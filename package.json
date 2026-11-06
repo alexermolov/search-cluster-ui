@@ -3,7 +3,7 @@
   "productName": "Search Cluster UI",
   "private": true,
   "version": "0.6.2",
-  "description": "Desktop client for Elasticsearch and OpenSearch clusters",
+  "description": "Desktop client for Elasticsearch, OpenSearch, Kafka, and Redis",
   "author": "Search Cluster UI Team",
   "main": "dist/main/index.js",
   "scripts": {
@@ -23,6 +23,8 @@
     "@codemirror/lang-json": "^6.0.1",
     "@codemirror/theme-one-dark": "^6.1.2",
     "codemirror": "^6.0.1",
+    "ioredis": "^6.0.0",
+    "kafkajs": "^2.2.4",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "zustand": "^4.5.5"

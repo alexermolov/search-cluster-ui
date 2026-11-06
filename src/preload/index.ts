@@ -92,6 +92,29 @@ const api: ElectronApi = {
     ipcRenderer.invoke(IPC.ClusterDataStreams, connectionId, requestId),
   msearch: (connectionId, input, requestId) =>
     ipcRenderer.invoke(IPC.ClusterMsearch, connectionId, input, requestId),
+  listKafkaConnections: () => ipcRenderer.invoke(IPC.KafkaConnectionsList),
+  saveKafkaConnection: (input) => ipcRenderer.invoke(IPC.KafkaConnectionsSave, input),
+  deleteKafkaConnection: (id) => ipcRenderer.invoke(IPC.KafkaConnectionsDelete, id),
+  testKafkaConnection: (input) => ipcRenderer.invoke(IPC.KafkaConnectionsTest, input),
+  listKafkaTopics: (connectionId) => ipcRenderer.invoke(IPC.KafkaTopics, connectionId),
+  fetchKafkaMessages: (connectionId, input) =>
+    ipcRenderer.invoke(IPC.KafkaMessages, connectionId, input),
+  listRedisConnections: () => ipcRenderer.invoke(IPC.RedisConnectionsList),
+  saveRedisConnection: (input) => ipcRenderer.invoke(IPC.RedisConnectionsSave, input),
+  deleteRedisConnection: (id) => ipcRenderer.invoke(IPC.RedisConnectionsDelete, id),
+  testRedisConnection: (input) => ipcRenderer.invoke(IPC.RedisConnectionsTest, input),
+  scanRedisKeys: (connectionId, input) =>
+    ipcRenderer.invoke(IPC.RedisKeysScan, connectionId, input),
+  getRedisKey: (connectionId, key) =>
+    ipcRenderer.invoke(IPC.RedisKeyGet, connectionId, key),
+  saveRedisKey: (connectionId, input) =>
+    ipcRenderer.invoke(IPC.RedisKeySave, connectionId, input),
+  deleteRedisKey: (connectionId, key) =>
+    ipcRenderer.invoke(IPC.RedisKeyDelete, connectionId, key),
+  runRedisCommand: (connectionId, command) =>
+    ipcRenderer.invoke(IPC.RedisCommand, connectionId, command),
+  fetchRedisServerInfo: (connectionId) =>
+    ipcRenderer.invoke(IPC.RedisServerInfo, connectionId),
 }
 
 contextBridge.exposeInMainWorld('api', api)
