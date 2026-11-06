@@ -295,6 +295,7 @@ function parseMemberAssignment(buffer: Buffer): Record<string, number[]> {
 export async function fetchKafkaConsumerGroups(
   cache: KafkaClientCache,
   config: KafkaConnection,
+  topic?: string,
 ): Promise<KafkaConsumerGroupInfo[]> {
   const client = cache.get(config)
   const admin = await client.admin()
@@ -304,96 +305,112 @@ export async function fetchKafkaConsumerGroups(
 
   const { groups: descriptions } = await admin.describeGroups(groupIds)
 
-  // Fetch offsets for each group individually
-  const offsetMap = new Map<string, Map<string, Map<number, string>>>()
-  for (const groupId of groupIds) {
-    try {
-      const offsets = await admin.fetchOffsets({ groupId, resolveOffsets: true })
-      const topicMap = new Map<string, Map<number, string>>()
-      for (const topicOffset of offsets) {
-        const partitionMap = new Map<number, string>()
-        for (const po of topicOffset.partitions) {
-          partitionMap.set(po.partition, po.offset)
-        }
-        topicMap.set(topicOffset.topic, partitionMap)
-      }
-      offsetMap.set(groupId, topicMap)
-    } catch {
-      // Group may not have offsets yet
-    }
-  }
+  const relevantGroupIds = topic
+    ? descriptions
+        .filter((desc) =>
+          desc.members.some((member) => topic in parseMemberAssignment(member.memberAssignment)),
+        )
+        .map((desc) => desc.groupId)
+    : groupIds
+  if (relevantGroupIds.length === 0) return []
 
-  // Fetch high watermarks for all topics referenced by consumer groups
+  // Fetch offsets for all relevant groups in parallel
+  const offsetMap = new Map<string, Map<string, Map<number, string>>>()
+  await Promise.all(
+    relevantGroupIds.map(async (groupId) => {
+      try {
+        const offsets = await admin.fetchOffsets({ groupId, resolveOffsets: true })
+        const topicMap = new Map<string, Map<number, string>>()
+        for (const topicOffset of offsets) {
+          const partitionMap = new Map<number, string>()
+          for (const po of topicOffset.partitions) {
+            partitionMap.set(po.partition, po.offset)
+          }
+          topicMap.set(topicOffset.topic, partitionMap)
+        }
+        offsetMap.set(groupId, topicMap)
+      } catch {
+        // Group may not have offsets yet
+      }
+    }),
+  )
+
+  // Fetch high watermarks for relevant topics in parallel
   const allTopics = new Set<string>()
   for (const desc of descriptions) {
+    if (topic && !relevantGroupIds.includes(desc.groupId)) continue
     for (const member of desc.members) {
       const assignments = parseMemberAssignment(member.memberAssignment)
-      for (const topic of Object.keys(assignments)) {
-        allTopics.add(topic)
+      for (const assignedTopic of Object.keys(assignments)) {
+        allTopics.add(assignedTopic)
       }
     }
   }
-  // Also add topics from offsets
   for (const topicMap of offsetMap.values()) {
-    for (const topic of topicMap.keys()) {
-      allTopics.add(topic)
+    for (const offsetTopic of topicMap.keys()) {
+      allTopics.add(offsetTopic)
     }
   }
 
+  const topicsToFetch = topic ? [topic] : Array.from(allTopics)
   const topicHighOffsets = new Map<string, Map<number, string>>()
-  for (const topic of allTopics) {
-    try {
-      const topicOffsets = await admin.fetchTopicOffsets(topic)
-      const map = new Map<number, string>()
-      for (const o of topicOffsets) {
-        map.set(o.partition, o.high)
+  await Promise.all(
+    topicsToFetch.map(async (topicToFetch) => {
+      try {
+        const topicOffsets = await admin.fetchTopicOffsets(topicToFetch)
+        const map = new Map<number, string>()
+        for (const o of topicOffsets) {
+          map.set(o.partition, o.high)
+        }
+        topicHighOffsets.set(topicToFetch, map)
+      } catch {
+        // Topic may not exist
       }
-      topicHighOffsets.set(topic, map)
-    } catch {
-      // Topic may not exist
-    }
-  }
+    }),
+  )
 
-  return descriptions.map((desc): KafkaConsumerGroupInfo => {
-    const lag: Record<string, Record<string, number>> = {}
-    const groupOffsets = offsetMap.get(desc.groupId)
+  return descriptions
+    .filter((desc) => !topic || relevantGroupIds.includes(desc.groupId))
+    .map((desc): KafkaConsumerGroupInfo => {
+      const lag: Record<string, Record<string, number>> = {}
+      const groupOffsets = offsetMap.get(desc.groupId)
 
-    // Calculate lag from offsets (all topics the group consumes)
-    if (groupOffsets) {
-      for (const [topic, partitionMap] of groupOffsets) {
-        const highMap = topicHighOffsets.get(topic)
-        if (!highMap) continue
-        const topicLag: Record<string, number> = {}
-        for (const [partition, currentOffset] of partitionMap) {
-          const high = highMap.get(partition)
-          if (high !== undefined) {
-            const lagValue = Number(high) - Number(currentOffset)
-            topicLag[String(partition)] = lagValue >= 0 ? lagValue : 0
+      if (groupOffsets) {
+        for (const [offsetTopic, partitionMap] of groupOffsets) {
+          if (topic && offsetTopic !== topic) continue
+          const highMap = topicHighOffsets.get(offsetTopic)
+          if (!highMap) continue
+          const topicLag: Record<string, number> = {}
+          for (const [partition, currentOffset] of partitionMap) {
+            const high = highMap.get(partition)
+            if (high !== undefined) {
+              const lagValue = Number(high) - Number(currentOffset)
+              topicLag[String(partition)] = lagValue >= 0 ? lagValue : 0
+            }
+          }
+          if (Object.keys(topicLag).length > 0) {
+            lag[offsetTopic] = topicLag
           }
         }
-        if (Object.keys(topicLag).length > 0) {
-          lag[topic] = topicLag
-        }
       }
-    }
 
-    return {
-      groupId: desc.groupId,
-      protocol: desc.protocol,
-      state: desc.state,
-      members: desc.members.map(
-        (m): KafkaConsumerGroupMember => ({
-          clientId: m.clientId,
-          clientHost: m.clientHost,
-          memberId: m.memberId,
-          assignments: Object.entries(parseMemberAssignment(m.memberAssignment)).map(
-            ([topic, partitions]) => ({ topic, partitions }),
-          ),
-        }),
-      ),
-      lag,
-    }
-  })
+      return {
+        groupId: desc.groupId,
+        protocol: desc.protocol,
+        state: desc.state,
+        members: desc.members.map(
+          (m): KafkaConsumerGroupMember => ({
+            clientId: m.clientId,
+            clientHost: m.clientHost,
+            memberId: m.memberId,
+            assignments: Object.entries(parseMemberAssignment(m.memberAssignment)).map(
+              ([topic, partitions]) => ({ topic, partitions }),
+            ),
+          }),
+        ),
+        lag,
+      }
+    })
 }
 
 export async function produceKafkaMessage(

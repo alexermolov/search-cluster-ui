@@ -708,7 +708,7 @@ export function KafkaWorkspace({ onClose }: { onClose: () => void }) {
     try {
       const [parts, groups] = await Promise.all([
         api.fetchKafkaTopicPartitions(active.id, topic),
-        api.fetchKafkaConsumerGroups(active.id),
+        api.fetchKafkaConsumerGroups(active.id, topic),
       ])
       setPartitions(parts)
       setConsumerGroups(groups)

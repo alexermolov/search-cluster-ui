@@ -481,6 +481,17 @@ body {
   gap: 8px;
 }
 
+.kafka-message-tools > .btn,
+.kafka-message-tools > .input {
+  height: 30px;
+  padding: 4px 8px;
+  font-size: 12px;
+}
+
+.kafka-message-tools > .btn {
+  white-space: nowrap;
+}
+
 .kafka-message-tools > .input:first-child {
   flex: 1;
   min-width: 100px;
