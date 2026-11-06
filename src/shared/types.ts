@@ -121,6 +121,7 @@ export interface RedisKeyEntry {
 
 export interface RedisKeyDetail extends RedisKeyEntry {
   value: RedisKeyValue
+  truncated: boolean
 }
 
 export type RedisKeySaveInput = {

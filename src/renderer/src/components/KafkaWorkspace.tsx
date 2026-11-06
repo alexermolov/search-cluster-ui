@@ -573,11 +573,15 @@ export function KafkaWorkspace({ onClose }: { onClose: () => void }) {
   const messageRequest = useRef(0)
 
   const active = connections.find((connection) => connection.id === activeId) ?? null
+  const searchableMessages = useMemo(
+    () => messages.map((message) => JSON.stringify(message).toLocaleLowerCase()),
+    [messages],
+  )
   const visibleMessages = useMemo(() => {
     const needle = search.trim().toLocaleLowerCase()
     if (!needle) return messages
-    return messages.filter((message) => JSON.stringify(message).toLocaleLowerCase().includes(needle))
-  }, [messages, search])
+    return messages.filter((_, index) => searchableMessages[index].includes(needle))
+  }, [messages, search, searchableMessages])
   const visibleTopics = useMemo(() => {
     const needle = topicFilter.trim().toLocaleLowerCase()
     return needle ? topics.filter((item) => item.name.toLocaleLowerCase().includes(needle)) : topics

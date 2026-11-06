@@ -687,8 +687,17 @@ body {
   gap: 3px;
 }
 
+.redis-key-list-window {
+  position: relative;
+  flex: 0 0 auto;
+  width: 100%;
+}
+
 .redis-key-item {
   display: flex;
+  box-sizing: border-box;
+  right: 0;
+  left: 0;
   flex-direction: column;
   align-items: stretch;
   gap: 5px;
@@ -726,6 +735,11 @@ body {
 .redis-empty-keys {
   padding: 16px 8px;
   text-align: center;
+}
+
+.redis-key-limit {
+  padding: 4px 2px;
+  font-size: 11px;
 }
 
 .redis-key-detail,

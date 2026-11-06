@@ -1,7 +1,42 @@
 import { useEffect, useRef, useState } from 'react'
-import type { RedisKeyDetail, RedisKeyType, RedisServerInfo, StoredRedisConnection } from '../../../shared/types'
+import type {
+  RedisKeyDetail,
+  RedisKeyEntry,
+  RedisKeyType,
+  RedisServerInfo,
+  StoredRedisConnection,
+} from '../../../shared/types'
 import type { RedisConnectionInput, RedisKeySaveInput } from '../../../shared/types'
 import { api, errorMessage } from '../api'
+
+const REDIS_MAX_LOADED_KEYS = 5000
+const REDIS_KEY_ROW_HEIGHT = 56
+const REDIS_KEY_OVERSCAN = 5
+
+function mergeKeyPages(previous: RedisKeyEntry[], next: RedisKeyEntry[]): RedisKeyEntry[] {
+  const fresh = [...new Map(next.map((entry) => [entry.key, entry])).values()]
+    .sort((a, b) => a.key.localeCompare(b.key))
+  const merged: RedisKeyEntry[] = []
+  let oldIndex = 0
+  let newIndex = 0
+  while (oldIndex < previous.length && newIndex < fresh.length) {
+    const oldEntry = previous[oldIndex]
+    const newEntry = fresh[newIndex]
+    if (oldEntry.key.localeCompare(newEntry.key) < 0) {
+      merged.push(oldEntry)
+      oldIndex += 1
+    } else if (oldEntry.key.localeCompare(newEntry.key) > 0) {
+      merged.push(newEntry)
+      newIndex += 1
+    } else {
+      merged.push(newEntry)
+      oldIndex += 1
+      newIndex += 1
+    }
+  }
+  merged.push(...previous.slice(oldIndex), ...fresh.slice(newIndex))
+  return merged.slice(0, REDIS_MAX_LOADED_KEYS)
+}
 
 function formatUptime(seconds: number | null): string {
   if (seconds === null) return '—'
@@ -583,6 +618,7 @@ export function RedisWorkspace({ onClose }: { onClose: () => void }) {
   const [activeCommandSuggestion, setActiveCommandSuggestion] = useState(0)
   const [commandSuggestionsDismissed, setCommandSuggestionsDismissed] = useState(false)
   const [commandOutput, setCommandOutput] = useState<Array<{ command: string; result: unknown; error?: string }>>([])
+  const [keyListWindow, setKeyListWindow] = useState({ top: 0, height: 600 })
   const [loadingKeys, setLoadingKeys] = useState(false)
   const [loadingDetail, setLoadingDetail] = useState(false)
   const [loadingServer, setLoadingServer] = useState(false)
@@ -593,14 +629,29 @@ export function RedisWorkspace({ onClose }: { onClose: () => void }) {
   const keyRequest = useRef(0)
   const detailRequest = useRef(0)
   const serverRequest = useRef(0)
+  const keyListRef = useRef<HTMLDivElement>(null)
   const commandInput = useRef<HTMLTextAreaElement>(null)
 
   const active = connections.find((connection) => connection.id === activeId) ?? null
-  const visibleKeys = keys
+  const firstVisibleKey = Math.max(
+    0,
+    Math.floor(keyListWindow.top / REDIS_KEY_ROW_HEIGHT) - REDIS_KEY_OVERSCAN,
+  )
+  const lastVisibleKey = Math.min(
+    keys.length,
+    firstVisibleKey + Math.ceil(keyListWindow.height / REDIS_KEY_ROW_HEIGHT) + REDIS_KEY_OVERSCAN * 2,
+  )
+  const visibleKeys = keys.slice(firstVisibleKey, lastVisibleKey)
   const commandPrefix = command.match(/^\s*(\S+)$/)?.[1] ?? null
   const commandSuggestions = commandPrefix && !commandSuggestionsDismissed
     ? REDIS_COMMANDS.filter(([name]) => name.startsWith(commandPrefix.toUpperCase())).slice(0, 8)
     : []
+
+  useEffect(() => {
+    if (tab !== 'keys' || !keyListRef.current) return
+    keyListRef.current.scrollTop = 0
+    setKeyListWindow({ top: 0, height: keyListRef.current.clientHeight })
+  }, [tab])
 
   function completeCommand(name: string): void {
     const leadingWhitespace = command.match(/^\s*/)?.[0] ?? ''
@@ -631,6 +682,8 @@ export function RedisWorkspace({ onClose }: { onClose: () => void }) {
       setScanMatch(match)
       setKeys([])
       setCursor('')
+      setKeyListWindow({ top: 0, height: keyListRef.current?.clientHeight ?? 600 })
+      if (keyListRef.current) keyListRef.current.scrollTop = 0
       setSelectedKey(null)
       detailRequest.current += 1
     }
@@ -643,9 +696,7 @@ export function RedisWorkspace({ onClose }: { onClose: () => void }) {
       if (request !== keyRequest.current) return
       setKeys((previous) => {
         if (!append) return result.keys
-        const found = new Map(previous.map((entry) => [entry.key, entry]))
-        for (const entry of result.keys) found.set(entry.key, entry)
-        return [...found.values()].sort((a, b) => a.key.localeCompare(b.key))
+        return mergeKeyPages(previous, result.keys)
       })
       setCursor(result.cursor)
     } catch (reason) {
@@ -763,10 +814,12 @@ export function RedisWorkspace({ onClose }: { onClose: () => void }) {
     setError(null)
     try {
       const result = await api.runRedisCommand(active.id, submitted)
-      setCommandOutput((previous) => [...previous, { command: submitted, result }])
+      setCommandOutput((previous) => [...previous, { command: submitted, result }].slice(-100))
     } catch (reason) {
       const message = errorMessage(reason)
-      setCommandOutput((previous) => [...previous, { command: submitted, result: null, error: message }])
+      setCommandOutput((previous) =>
+        [...previous, { command: submitted, result: null, error: message }].slice(-100),
+      )
     } finally {
       setRunningCommand(false)
     }
@@ -861,7 +914,10 @@ export function RedisWorkspace({ onClose }: { onClose: () => void }) {
                 <button
                   key={view}
                   className={`redis-tab${tab === view ? ' active' : ''}`}
-                  onClick={() => setTab(view)}
+                  onClick={() => {
+                    if (view === 'keys') setKeyListWindow((current) => ({ ...current, top: 0 }))
+                    setTab(view)
+                  }}
                 >
                   {view === 'keys' ? 'Keys' : view === 'console' ? 'Console' : 'Server info'}
                 </button>
@@ -890,28 +946,54 @@ export function RedisWorkspace({ onClose }: { onClose: () => void }) {
                     />
                     <button className="btn" type="submit" disabled={loadingKeys}>Search</button>
                   </form>
-                  <div className="redis-key-list">
-                    {visibleKeys.map((entry) => (
-                      <button
-                        key={entry.key}
-                        className={`redis-key-item${selectedKey?.key === entry.key ? ' active' : ''}`}
-                        onClick={() => void selectKey(entry.key)}
-                      >
-                        <span className="redis-key-name">{entry.key}</span>
-                        <span className="redis-key-meta">
-                          <span>{entry.type}</span>
-                          <span>{formatTtl(entry.ttlMs)}</span>
-                        </span>
-                      </button>
-                    ))}
+                  <div
+                    className="redis-key-list"
+                    ref={keyListRef}
+                    onScroll={(event) =>
+                      setKeyListWindow({
+                        top: event.currentTarget.scrollTop,
+                        height: event.currentTarget.clientHeight,
+                      })
+                    }
+                  >
+                    {keys.length > 0 && (
+                      <div className="redis-key-list-window" style={{ height: keys.length * REDIS_KEY_ROW_HEIGHT }}>
+                        {visibleKeys.map((entry, index) => {
+                          const keyIndex = firstVisibleKey + index
+                          return (
+                            <button
+                              key={entry.key}
+                              className={`redis-key-item${selectedKey?.key === entry.key ? ' active' : ''}`}
+                              style={{
+                                position: 'absolute',
+                                top: keyIndex * REDIS_KEY_ROW_HEIGHT,
+                                height: REDIS_KEY_ROW_HEIGHT - 3,
+                              }}
+                              onClick={() => void selectKey(entry.key)}
+                            >
+                              <span className="redis-key-name">{entry.key}</span>
+                              <span className="redis-key-meta">
+                                <span>{entry.type}</span>
+                                <span>{formatTtl(entry.ttlMs)}</span>
+                              </span>
+                            </button>
+                          )
+                        })}
+                      </div>
+                    )}
                     {!loadingKeys && keys.length === 0 && (
                       <div className="muted redis-empty-keys">No keys found for this pattern.</div>
                     )}
                   </div>
+                  {keys.length >= REDIS_MAX_LOADED_KEYS && cursor && (
+                    <div className="muted redis-key-limit">
+                      Showing the first {REDIS_MAX_LOADED_KEYS.toLocaleString()} keys. Narrow the pattern to see more.
+                    </div>
+                  )}
                   <button
                     className="btn btn-block"
                     onClick={() => void reloadKeys(active.id, true)}
-                    disabled={!cursor || loadingKeys}
+                    disabled={!cursor || loadingKeys || keys.length >= REDIS_MAX_LOADED_KEYS}
                   >
                     {loadingKeys ? 'Scanning…' : cursor ? 'Load more' : 'End of key scan'}
                   </button>
@@ -943,7 +1025,7 @@ export function RedisWorkspace({ onClose }: { onClose: () => void }) {
                           </div>
                         </div>
                         <div className="redis-detail-actions">
-                          {selectedKey.type !== 'stream' && selectedKey.type !== 'other' && (
+                          {selectedKey.type !== 'stream' && selectedKey.type !== 'other' && !selectedKey.truncated && (
                             <button
                               className="btn"
                               onClick={() => {
@@ -964,6 +1046,13 @@ export function RedisWorkspace({ onClose }: { onClose: () => void }) {
                           </button>
                         </div>
                       </div>
+                      {selectedKey.truncated && (
+                        <div className="muted redis-key-limit">
+                          {selectedKey.type === 'stream'
+                            ? 'Only the first 100 stream entries are shown.'
+                            : 'Only the first 1,000 collection values are shown; editing is disabled to preserve the remaining data.'}
+                        </div>
+                      )}
                       <pre className="redis-key-value">{JSON.stringify(selectedKey.value, null, 2)}</pre>
                     </>
                   )}

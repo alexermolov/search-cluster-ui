@@ -15,6 +15,11 @@ import type {
 
 type RedisConfig = RedisConnectionInput | StoredRedisConnection
 type RedisClient = Redis | Cluster
+const REDIS_SCAN_PIPELINE_SIZE = 100
+const REDIS_SCAN_CONCURRENCY = 8
+const REDIS_COLLECTION_LIMIT = 1000
+const REDIS_COMMAND_RESULT_LIMIT = 1000
+const REDIS_COMMAND_STRING_LIMIT = 100_000
 
 function parseNodes(value: string): Array<{ host: string; port: number }> {
   return value.split(',').map((raw) => {
@@ -111,14 +116,81 @@ function createRedisClient(config: RedisConfig): RedisClient {
   return client
 }
 
-async function withRedis<T>(config: RedisConfig, operation: (client: RedisClient) => Promise<T>): Promise<T> {
-  const client = createRedisClient(config)
-  try {
-    await client.connect()
-    return await operation(client)
-  } finally {
-    client.disconnect()
+class RedisClientCache {
+  private readonly entries = new Map<string, { client: RedisClient; hash: string }>()
+
+  get(config: RedisConfig): RedisClient {
+    const hash = JSON.stringify(config)
+    const id = 'id' in config && config.id ? config.id : `draft:${hash}`
+    const existing = this.entries.get(id)
+    if (existing?.hash === hash) return existing.client
+
+    existing?.client.disconnect()
+    const client = createRedisClient(config)
+    this.entries.set(id, { client, hash })
+    return client
   }
+
+  drop(id: string): void {
+    this.entries.get(id)?.client.disconnect()
+    this.entries.delete(id)
+  }
+
+  disconnectAll(): void {
+    for (const { client } of this.entries.values()) client.disconnect()
+    this.entries.clear()
+  }
+}
+
+const redisClientCache = new RedisClientCache()
+const connectionPromises = new WeakMap<RedisClient, Promise<void>>()
+
+function waitForRedisReady(client: RedisClient): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const cleanup = () => {
+      client.off('ready', onReady)
+      client.off('end', onEnd)
+    }
+    const onReady = () => {
+      cleanup()
+      resolve()
+    }
+    const onEnd = () => {
+      cleanup()
+      reject(new Error('Redis connection ended before becoming ready'))
+    }
+    client.once('ready', onReady)
+    client.once('end', onEnd)
+  })
+}
+
+async function ensureConnected(client: RedisClient): Promise<void> {
+  if (client.status === 'ready') return
+  let connection = connectionPromises.get(client)
+  if (!connection) {
+    if (client.status === 'end') throw new Error('Redis connection is closed')
+    connection = client.status === 'wait' ? client.connect() : waitForRedisReady(client)
+    connectionPromises.set(client, connection)
+  }
+  try {
+    await connection
+  } finally {
+    if (connectionPromises.get(client) === connection) connectionPromises.delete(client)
+  }
+}
+
+export function dropRedisClient(id: string): void {
+  redisClientCache.drop(id)
+}
+
+export function disconnectRedisClients(): void {
+  redisClientCache.disconnectAll()
+}
+
+async function withRedis<T>(config: RedisConfig, operation: (client: RedisClient) => Promise<T>): Promise<T> {
+  const client = redisClientCache.get(config)
+  await ensureConnected(client)
+  return operation(client)
 }
 
 function parseInfo(text: string): Record<string, string> {
@@ -214,10 +286,14 @@ async function serverInfo(client: RedisClient): Promise<RedisServerInfo> {
 }
 
 export async function testRedisConnection(config: RedisConfig): Promise<RedisServerInfo> {
-  return withRedis(config, async (client) => {
+  const client = createRedisClient(config)
+  try {
+    await ensureConnected(client)
     await client.ping()
     return serverInfo(client)
-  })
+  } finally {
+    client.disconnect()
+  }
 }
 
 export async function fetchRedisServerInfo(config: RedisConfig): Promise<RedisServerInfo> {
@@ -266,9 +342,15 @@ export async function scanRedisKeys(
           throw new Error('Invalid cluster scan cursor')
         }
       }
-      const results = await Promise.all(
-        nodes.map((node, index) => scanNode(node, cursors[index], pattern, count)),
-      )
+      const results: Array<[string, string[]]> = new Array(nodes.length)
+      for (let offset = 0; offset < nodes.length; offset += REDIS_SCAN_CONCURRENCY) {
+        await Promise.all(
+          nodes.slice(offset, offset + REDIS_SCAN_CONCURRENCY).map(async (node, batchIndex) => {
+            const index = offset + batchIndex
+            results[index] = await scanNode(node, cursors[index], pattern, count)
+          }),
+        )
+      }
       keys = results.flatMap((result) => result[1])
       const updatedCursors = results.map((result) => result[0])
       nextCursor = updatedCursors.every((cursor) => cursor === '0') ? '' : JSON.stringify(updatedCursors)
@@ -278,13 +360,25 @@ export async function scanRedisKeys(
       nextCursor = cursor === '0' ? '' : cursor
     }
 
-    const entries = await Promise.all(
-      keys.map(async (key): Promise<RedisKeyEntry> => ({
-        key,
-        type: redisKeyType(await client.type(key)),
-        ttlMs: await client.pttl(key),
-      })),
-    )
+    const entries: RedisKeyEntry[] = []
+    for (let offset = 0; offset < keys.length; offset += REDIS_SCAN_PIPELINE_SIZE) {
+      const batch = keys.slice(offset, offset + REDIS_SCAN_PIPELINE_SIZE)
+      const pipeline = client.pipeline()
+      for (const key of batch) pipeline.type(key).pttl(key)
+      const results = await pipeline.exec()
+      if (!results) throw new Error('Redis did not execute the key metadata pipeline')
+      for (let index = 0; index < batch.length; index += 1) {
+        const [typeError, type] = results[index * 2]
+        const [ttlError, ttlMs] = results[index * 2 + 1]
+        if (typeError) throw typeError
+        if (ttlError) throw ttlError
+        entries.push({
+          key: batch[index],
+          type: redisKeyType(String(type)),
+          ttlMs: Number(ttlMs),
+        })
+      }
+    }
     return {
       cursor: nextCursor,
       keys: entries.filter((entry) => entry.type !== 'other').sort((a, b) => a.key.localeCompare(b.key)),
@@ -292,25 +386,81 @@ export async function scanRedisKeys(
   })
 }
 
-async function readKeyValue(client: RedisClient, key: string, type: RedisKeyType): Promise<RedisKeyValue> {
+interface ReadKeyValueResult {
+  value: RedisKeyValue
+  truncated: boolean
+}
+
+async function readScannedCollection(
+  client: RedisClient,
+  key: string,
+  type: 'hash' | 'set',
+): Promise<ReadKeyValueResult> {
+  let cursor = '0'
+  let truncated = false
+  const hashEntries: Array<[string, string]> = []
+  const setValue: string[] = []
+  let hashCount = 0
+
+  do {
+    const remaining = REDIS_COLLECTION_LIMIT - (type === 'hash' ? hashCount : setValue.length)
+    const [nextCursor, values] = type === 'hash'
+      ? await client.hscan(key, cursor, 'COUNT', Math.min(100, remaining + 1))
+      : await client.sscan(key, cursor, 'COUNT', Math.min(100, remaining + 1))
+    cursor = nextCursor
+    if (type === 'hash') {
+      for (let index = 0; index + 1 < values.length; index += 2) {
+        if (hashCount >= REDIS_COLLECTION_LIMIT) {
+          truncated = true
+          break
+        }
+        hashEntries.push([values[index], values[index + 1]])
+        hashCount += 1
+      }
+    } else {
+      const available = REDIS_COLLECTION_LIMIT - setValue.length
+      setValue.push(...values.slice(0, available))
+      if (values.length > available) truncated = true
+    }
+    if (cursor !== '0' && (type === 'hash' ? hashCount : setValue.length) >= REDIS_COLLECTION_LIMIT)
+      truncated = true
+  } while (cursor !== '0' && !truncated)
+
+  return {
+    value: type === 'hash' ? Object.fromEntries(hashEntries) : setValue,
+    truncated,
+  }
+}
+
+async function readKeyValue(client: RedisClient, key: string, type: RedisKeyType): Promise<ReadKeyValueResult> {
   switch (type) {
     case 'string':
-      return (await client.get(key)) ?? ''
+      return { value: (await client.get(key)) ?? '', truncated: false }
     case 'hash':
-      return client.hgetall(key)
-    case 'list':
-      return client.lrange(key, 0, 999)
     case 'set':
-      return client.smembers(key)
-    case 'zset': {
-      const values = await client.zrange(key, '0', '999', 'WITHSCORES')
-      return values.reduce<Array<{ member: string; score: number }>>((result, value, index) => {
-        if (index % 2 === 0) result.push({ member: value, score: Number(values[index + 1]) })
-        return result
-      }, [])
+      return readScannedCollection(client, key, type)
+    case 'list': {
+      const values = await client.lrange(key, 0, REDIS_COLLECTION_LIMIT)
+      return { value: values.slice(0, REDIS_COLLECTION_LIMIT), truncated: values.length > REDIS_COLLECTION_LIMIT }
     }
-    case 'stream':
-      return (await client.xrange(key, '-', '+', 'COUNT', 100)).map(([id, fields]) => ({ id, fields }))
+    case 'zset': {
+      const values = await client.zrange(key, '0', String(REDIS_COLLECTION_LIMIT), 'WITHSCORES')
+      const limitedValues = values.slice(0, REDIS_COLLECTION_LIMIT * 2)
+      return {
+        value: limitedValues.reduce<Array<{ member: string; score: number }>>((result, value, index) => {
+          if (index % 2 === 0) result.push({ member: value, score: Number(limitedValues[index + 1]) })
+          return result
+        }, []),
+        truncated: values.length > REDIS_COLLECTION_LIMIT * 2,
+      }
+    }
+    case 'stream': {
+      const values = await client.xrange(key, '-', '+', 'COUNT', 101)
+      return {
+        value: values.slice(0, 100).map(([id, fields]) => ({ id, fields })),
+        truncated: values.length > 100,
+      }
+    }
     default:
       throw new Error(`Editing Redis keys of type "${type}" is not supported`)
   }
@@ -321,7 +471,11 @@ export async function getRedisKey(config: RedisConfig, key: string): Promise<Red
   return withRedis(config, async (client) => {
     const type = redisKeyType(await client.type(key))
     if (type === 'other') throw new Error(`Key "${key}" does not exist or has an unsupported type`)
-    return { key, type, ttlMs: await client.pttl(key), value: await readKeyValue(client, key, type) }
+    const [ttlMs, result] = await Promise.all([
+      client.pttl(key),
+      readKeyValue(client, key, type),
+    ])
+    return { key, type, ttlMs, ...result }
   })
 }
 
@@ -456,19 +610,36 @@ function parseCommand(command: string): string[] {
   return args
 }
 
-function normalizeCommandResult(value: unknown): unknown {
-  if (Buffer.isBuffer(value)) return value.toString('utf8')
-  if (Array.isArray(value)) return value.map(normalizeCommandResult)
-  if (value && typeof value === 'object')
-    return Object.fromEntries(
-      Object.entries(value).map(([key, item]) => [key, normalizeCommandResult(item)]),
+function normalizeCommandResult(value: unknown, budget: { remaining: number }): unknown {
+  if (budget.remaining <= 0) return '[truncated]'
+  budget.remaining -= 1
+  if (Buffer.isBuffer(value)) value = value.toString('utf8')
+  if (typeof value === 'string') {
+    return value.length > REDIS_COMMAND_STRING_LIMIT
+      ? `${value.slice(0, REDIS_COMMAND_STRING_LIMIT)}\n[truncated]`
+      : value
+  }
+  if (Array.isArray(value)) {
+    const values = value.slice(0, budget.remaining).map((item) => normalizeCommandResult(item, budget))
+    if (values.length < value.length) values.push('[truncated]')
+    return values
+  }
+  if (value && typeof value === 'object') {
+    const entries = Object.entries(value)
+    const normalized = Object.fromEntries(
+      entries.slice(0, budget.remaining).map(([key, item]) => [key, normalizeCommandResult(item, budget)]),
     )
+    if (entries.length > Object.keys(normalized).length) normalized._truncated = true
+    return normalized
+  }
   return value
 }
 
 export async function runRedisCommand(config: RedisConfig, command: string): Promise<unknown> {
   const args = parseCommand(command)
   return withRedis(config, async (client) =>
-    normalizeCommandResult(await client.call(args[0].toUpperCase(), ...args.slice(1))),
+    normalizeCommandResult(await client.call(args[0].toUpperCase(), ...args.slice(1)), {
+      remaining: REDIS_COMMAND_RESULT_LIMIT,
+    }),
   )
 }

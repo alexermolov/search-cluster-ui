@@ -43,6 +43,7 @@ import {
 } from './kafka'
 import {
   deleteRedisKey,
+  dropRedisClient,
   fetchRedisServerInfo,
   getRedisKey,
   runRedisCommand,
@@ -184,10 +185,15 @@ export function registerIpcHandlers(
   )
 
   ipcMain.handle(IPC.RedisConnectionsList, () => redisStore.list())
-  ipcMain.handle(IPC.RedisConnectionsSave, (_e, input: RedisConnectionInput) =>
-    redisStore.save(input),
-  )
-  ipcMain.handle(IPC.RedisConnectionsDelete, (_e, id: string) => redisStore.delete(id))
+  ipcMain.handle(IPC.RedisConnectionsSave, (_e, input: RedisConnectionInput) => {
+    const saved = redisStore.save(input)
+    dropRedisClient(saved.id)
+    return saved
+  })
+  ipcMain.handle(IPC.RedisConnectionsDelete, (_e, id: string) => {
+    redisStore.delete(id)
+    dropRedisClient(id)
+  })
   ipcMain.handle(IPC.RedisConnectionsTest, (_e, input: RedisConnectionInput) =>
     testRedisConnection(input),
   )
