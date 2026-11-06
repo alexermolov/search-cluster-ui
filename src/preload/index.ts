@@ -105,8 +105,8 @@ const api: ElectronApi = {
     ipcRenderer.invoke(IPC.KafkaTopicPartitions, connectionId, topic),
   fetchKafkaConsumerGroups: (connectionId) =>
     ipcRenderer.invoke(IPC.KafkaConsumerGroups, connectionId),
-  fetchKafkaMessages: (connectionId, input) =>
-    ipcRenderer.invoke(IPC.KafkaMessages, connectionId, input),
+  fetchKafkaMessages: (connectionId, input, requestId) =>
+    ipcRenderer.invoke(IPC.KafkaMessages, connectionId, input, requestId),
   produceKafkaMessage: (connectionId, input) =>
     ipcRenderer.invoke(IPC.KafkaMessageProduce, connectionId, input),
   listRedisConnections: () => ipcRenderer.invoke(IPC.RedisConnectionsList),

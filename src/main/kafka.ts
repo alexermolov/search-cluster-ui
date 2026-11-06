@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto'
 import { Kafka, logLevel, type Consumer, type EachMessagePayload } from 'kafkajs'
 import type {
   KafkaMessageProduceInput,
@@ -17,6 +18,19 @@ import type {
 
 export type KafkaConnection = KafkaConnectionInput | StoredKafkaConnection
 
+function hashString(input: string): string {
+  return createHash('sha256').update(input).digest('hex').slice(0, 8)
+}
+
+function hashConfig(config: KafkaConnection): string {
+  return JSON.stringify({
+    brokers: config.brokers,
+    auth: config.auth,
+    tls: config.tls,
+    timeoutMs: config.timeoutMs,
+  })
+}
+
 function saslOptions(auth: KafkaAuthConfig) {
   const credentials = { username: auth.username, password: auth.password }
   switch (auth.mechanism) {
@@ -29,7 +43,7 @@ function saslOptions(auth: KafkaAuthConfig) {
   }
 }
 
-function createKafka(config: KafkaConnection): Kafka {
+function buildKafka(config: KafkaConnection): Kafka {
   const brokers = config.brokers
     .split(',')
     .map((broker) => broker.trim())
@@ -65,33 +79,117 @@ function createKafka(config: KafkaConnection): Kafka {
   })
 }
 
+class CachedClient {
+  kafka: Kafka
+  adminConnected = false
+  producerConnected = false
+
+  constructor(kafka: Kafka) {
+    this.kafka = kafka
+  }
+
+  async admin() {
+    const admin = this.kafka.admin()
+    if (!this.adminConnected) {
+      await admin.connect()
+      this.adminConnected = true
+    }
+    return admin
+  }
+
+  async producer() {
+    const producer = this.kafka.producer()
+    if (!this.producerConnected) {
+      await producer.connect()
+      this.producerConnected = true
+    }
+    return producer
+  }
+
+  async disconnect() {
+    const admin = this.kafka.admin()
+    const producer = this.kafka.producer()
+    if (this.adminConnected) {
+      try {
+        await admin.disconnect()
+      } catch {
+        /* ignore */
+      }
+      this.adminConnected = false
+    }
+    if (this.producerConnected) {
+      try {
+        await producer.disconnect()
+      } catch {
+        /* ignore */
+      }
+      this.producerConnected = false
+    }
+  }
+}
+
+export class KafkaClientCache {
+  private entries = new Map<string, { client: CachedClient; hash: string }>()
+
+  get(config: KafkaConnection): CachedClient {
+    const id = ('id' in config && config.id) ? config.id : 'draft'
+    const hash = hashConfig(config)
+    const existing = this.entries.get(id)
+    if (existing && existing.hash === hash) return existing.client
+
+    existing?.client.disconnect().catch(() => undefined)
+    const client = new CachedClient(buildKafka(config))
+    this.entries.set(id, { client, hash })
+    return client
+  }
+
+  drop(id: string): void {
+    const existing = this.entries.get(id)
+    if (existing) {
+      existing.client.disconnect().catch(() => undefined)
+      this.entries.delete(id)
+    }
+  }
+
+  async disconnectAll(): Promise<void> {
+    await Promise.all(
+      Array.from(this.entries.values()).map((e) => e.client.disconnect().catch(() => undefined)),
+    )
+    this.entries.clear()
+  }
+}
+
 export async function testKafkaConnection(
   config: KafkaConnection,
 ): Promise<{ brokers: number; clusterId: string }> {
-  const admin = createKafka(config).admin()
+  const admin = buildKafka(config).admin()
   try {
     await admin.connect()
     const cluster = await admin.describeCluster()
     return { brokers: cluster.brokers.length, clusterId: cluster.clusterId }
   } finally {
-    await admin.disconnect()
+    try {
+      await admin.disconnect()
+    } catch {
+      /* ignore */
+    }
   }
 }
 
-export async function listKafkaTopics(config: KafkaConnection): Promise<KafkaTopicInfo[]> {
-  const admin = createKafka(config).admin()
-  try {
-    await admin.connect()
-    const metadata = await admin.fetchTopicMetadata()
-    return metadata.topics
-      .map((topic) => ({ name: topic.name, partitions: topic.partitions.length }))
-      .sort((a, b) => a.name.localeCompare(b.name))
-  } finally {
-    await admin.disconnect()
-  }
+export async function listKafkaTopics(
+  cache: KafkaClientCache,
+  config: KafkaConnection,
+): Promise<KafkaTopicInfo[]> {
+  const client = cache.get(config)
+  const admin = await client.admin()
+  const metadata = await admin.fetchTopicMetadata()
+  return metadata.topics
+    .map((topic) => ({ name: topic.name, partitions: topic.partitions.length }))
+    .sort((a, b) => a.name.localeCompare(b.name))
 }
 
 export async function createKafkaTopic(
+  cache: KafkaClientCache,
   config: KafkaConnection,
   { topic, numPartitions, replicationFactor }: KafkaTopicCreateInput,
 ): Promise<boolean> {
@@ -101,62 +199,54 @@ export async function createKafkaTopic(
   if (!Number.isInteger(replicationFactor) || replicationFactor < 1)
     throw new Error('Replication factor must be a positive integer')
 
-  const admin = createKafka(config).admin()
-  try {
-    await admin.connect()
-    return await admin.createTopics({
-      topics: [{ topic: topic.trim(), numPartitions, replicationFactor }],
-      waitForLeaders: true,
-    })
-  } finally {
-    await admin.disconnect()
-  }
+  const client = cache.get(config)
+  const admin = await client.admin()
+  return await admin.createTopics({
+    topics: [{ topic: topic.trim(), numPartitions, replicationFactor }],
+    waitForLeaders: true,
+  })
 }
 
-export async function deleteKafkaTopic(config: KafkaConnection, topic: string): Promise<void> {
+export async function deleteKafkaTopic(
+  cache: KafkaClientCache,
+  config: KafkaConnection,
+  topic: string,
+): Promise<void> {
   if (!topic.trim()) throw new Error('A Kafka topic name is required')
-  const admin = createKafka(config).admin()
-  try {
-    await admin.connect()
-    await admin.deleteTopics({ topics: [topic.trim()] })
-  } finally {
-    await admin.disconnect()
-  }
+  const client = cache.get(config)
+  const admin = await client.admin()
+  await admin.deleteTopics({ topics: [topic.trim()] })
 }
 
 export async function fetchKafkaTopicPartitions(
+  cache: KafkaClientCache,
   config: KafkaConnection,
   topic: string,
 ): Promise<KafkaPartitionInfo[]> {
   if (!topic.trim()) throw new Error('A Kafka topic name is required')
-  const kafka = createKafka(config)
-  const admin = kafka.admin()
-  try {
-    await admin.connect()
-    const [metadata, offsets] = await Promise.all([
-      admin.fetchTopicMetadata({ topics: [topic.trim()] }),
-      admin.fetchTopicOffsets(topic.trim()),
-    ])
-    const topicMeta = metadata.topics.find((t) => t.name === topic.trim())
-    if (!topicMeta) throw new Error(`Topic "${topic}" not found`)
+  const client = cache.get(config)
+  const admin = await client.admin()
+  const [metadata, offsets] = await Promise.all([
+    admin.fetchTopicMetadata({ topics: [topic.trim()] }),
+    admin.fetchTopicOffsets(topic.trim()),
+  ])
+  const topicMeta = metadata.topics.find((t) => t.name === topic.trim())
+  if (!topicMeta) throw new Error(`Topic "${topic}" not found`)
 
-    const offsetMap = new Map(offsets.map((o) => [o.partition, o]))
-    return topicMeta.partitions
-      .map((p): KafkaPartitionInfo => {
-        const off = offsetMap.get(p.partitionId)
-        return {
-          partition: p.partitionId,
-          leader: p.leader ?? null,
-          replicas: p.replicas,
-          isr: p.isr,
-          lowOffset: off?.low ?? '0',
-          highOffset: off?.high ?? '0',
-        }
-      })
-      .sort((a, b) => a.partition - b.partition)
-  } finally {
-    await admin.disconnect()
-  }
+  const offsetMap = new Map(offsets.map((o) => [o.partition, o]))
+  return topicMeta.partitions
+    .map((p): KafkaPartitionInfo => {
+      const off = offsetMap.get(p.partitionId)
+      return {
+        partition: p.partitionId,
+        leader: p.leader ?? null,
+        replicas: p.replicas,
+        isr: p.isr,
+        lowOffset: off?.low ?? '0',
+        highOffset: off?.high ?? '0',
+      }
+    })
+    .sort((a, b) => a.partition - b.partition)
 }
 
 function parseMemberAssignment(buffer: Buffer): Record<string, number[]> {
@@ -203,130 +293,123 @@ function parseMemberAssignment(buffer: Buffer): Record<string, number[]> {
 }
 
 export async function fetchKafkaConsumerGroups(
+  cache: KafkaClientCache,
   config: KafkaConnection,
 ): Promise<KafkaConsumerGroupInfo[]> {
-  const kafka = createKafka(config)
-  const admin = kafka.admin()
-  try {
-    await admin.connect()
-    const groupsResponse = await admin.listGroups()
-    const groupIds = groupsResponse.groups.map((g) => g.groupId)
-    if (groupIds.length === 0) return []
+  const client = cache.get(config)
+  const admin = await client.admin()
+  const groupsResponse = await admin.listGroups()
+  const groupIds = groupsResponse.groups.map((g) => g.groupId)
+  if (groupIds.length === 0) return []
 
-    const { groups: descriptions } = await admin.describeGroups(groupIds)
+  const { groups: descriptions } = await admin.describeGroups(groupIds)
 
-    // Fetch offsets for each group individually
-    const offsetMap = new Map<string, Map<string, Map<number, string>>>()
-    for (const groupId of groupIds) {
-      try {
-        const offsets = await admin.fetchOffsets({ groupId, resolveOffsets: true })
-        const topicMap = new Map<string, Map<number, string>>()
-        for (const topicOffset of offsets) {
-          const partitionMap = new Map<number, string>()
-          for (const po of topicOffset.partitions) {
-            partitionMap.set(po.partition, po.offset)
-          }
-          topicMap.set(topicOffset.topic, partitionMap)
+  // Fetch offsets for each group individually
+  const offsetMap = new Map<string, Map<string, Map<number, string>>>()
+  for (const groupId of groupIds) {
+    try {
+      const offsets = await admin.fetchOffsets({ groupId, resolveOffsets: true })
+      const topicMap = new Map<string, Map<number, string>>()
+      for (const topicOffset of offsets) {
+        const partitionMap = new Map<number, string>()
+        for (const po of topicOffset.partitions) {
+          partitionMap.set(po.partition, po.offset)
         }
-        offsetMap.set(groupId, topicMap)
-      } catch {
-        // Group may not have offsets yet
+        topicMap.set(topicOffset.topic, partitionMap)
       }
+      offsetMap.set(groupId, topicMap)
+    } catch {
+      // Group may not have offsets yet
     }
+  }
 
-    // Fetch high watermarks for all topics referenced by consumer groups
-    const allTopics = new Set<string>()
-    for (const desc of descriptions) {
-      for (const member of desc.members) {
-        const assignments = parseMemberAssignment(member.memberAssignment)
-        for (const topic of Object.keys(assignments)) {
-          allTopics.add(topic)
-        }
-      }
-    }
-    // Also add topics from offsets
-    for (const topicMap of offsetMap.values()) {
-      for (const topic of topicMap.keys()) {
+  // Fetch high watermarks for all topics referenced by consumer groups
+  const allTopics = new Set<string>()
+  for (const desc of descriptions) {
+    for (const member of desc.members) {
+      const assignments = parseMemberAssignment(member.memberAssignment)
+      for (const topic of Object.keys(assignments)) {
         allTopics.add(topic)
       }
     }
+  }
+  // Also add topics from offsets
+  for (const topicMap of offsetMap.values()) {
+    for (const topic of topicMap.keys()) {
+      allTopics.add(topic)
+    }
+  }
 
-    const topicHighOffsets = new Map<string, Map<number, string>>()
-    for (const topic of allTopics) {
-      try {
-        const topicOffsets = await admin.fetchTopicOffsets(topic)
-        const map = new Map<number, string>()
-        for (const o of topicOffsets) {
-          map.set(o.partition, o.high)
+  const topicHighOffsets = new Map<string, Map<number, string>>()
+  for (const topic of allTopics) {
+    try {
+      const topicOffsets = await admin.fetchTopicOffsets(topic)
+      const map = new Map<number, string>()
+      for (const o of topicOffsets) {
+        map.set(o.partition, o.high)
+      }
+      topicHighOffsets.set(topic, map)
+    } catch {
+      // Topic may not exist
+    }
+  }
+
+  return descriptions.map((desc): KafkaConsumerGroupInfo => {
+    const lag: Record<string, Record<string, number>> = {}
+    const groupOffsets = offsetMap.get(desc.groupId)
+
+    // Calculate lag from offsets (all topics the group consumes)
+    if (groupOffsets) {
+      for (const [topic, partitionMap] of groupOffsets) {
+        const highMap = topicHighOffsets.get(topic)
+        if (!highMap) continue
+        const topicLag: Record<string, number> = {}
+        for (const [partition, currentOffset] of partitionMap) {
+          const high = highMap.get(partition)
+          if (high !== undefined) {
+            const lagValue = Number(high) - Number(currentOffset)
+            topicLag[String(partition)] = lagValue >= 0 ? lagValue : 0
+          }
         }
-        topicHighOffsets.set(topic, map)
-      } catch {
-        // Topic may not exist
+        if (Object.keys(topicLag).length > 0) {
+          lag[topic] = topicLag
+        }
       }
     }
 
-    return descriptions.map((desc): KafkaConsumerGroupInfo => {
-      const lag: Record<string, Record<string, number>> = {}
-      const groupOffsets = offsetMap.get(desc.groupId)
-
-      // Calculate lag from offsets (all topics the group consumes)
-      if (groupOffsets) {
-        for (const [topic, partitionMap] of groupOffsets) {
-          const highMap = topicHighOffsets.get(topic)
-          if (!highMap) continue
-          const topicLag: Record<string, number> = {}
-          for (const [partition, currentOffset] of partitionMap) {
-            const high = highMap.get(partition)
-            if (high !== undefined) {
-              const lagValue = Number(high) - Number(currentOffset)
-              topicLag[String(partition)] = lagValue >= 0 ? lagValue : 0
-            }
-          }
-          if (Object.keys(topicLag).length > 0) {
-            lag[topic] = topicLag
-          }
-        }
-      }
-
-      return {
-        groupId: desc.groupId,
-        protocol: desc.protocol,
-        state: desc.state,
-        members: desc.members.map(
-          (m): KafkaConsumerGroupMember => ({
-            clientId: m.clientId,
-            clientHost: m.clientHost,
-            memberId: m.memberId,
-            assignments: Object.entries(parseMemberAssignment(m.memberAssignment)).map(
-              ([topic, partitions]) => ({ topic, partitions }),
-            ),
-          }),
-        ),
-        lag,
-      }
-    })
-  } finally {
-    await admin.disconnect()
-  }
+    return {
+      groupId: desc.groupId,
+      protocol: desc.protocol,
+      state: desc.state,
+      members: desc.members.map(
+        (m): KafkaConsumerGroupMember => ({
+          clientId: m.clientId,
+          clientHost: m.clientHost,
+          memberId: m.memberId,
+          assignments: Object.entries(parseMemberAssignment(m.memberAssignment)).map(
+            ([topic, partitions]) => ({ topic, partitions }),
+          ),
+        }),
+      ),
+      lag,
+    }
+  })
 }
 
 export async function produceKafkaMessage(
+  cache: KafkaClientCache,
   config: KafkaConnection,
   { topic, key, value }: KafkaMessageProduceInput,
 ): Promise<void> {
   if (!topic.trim()) throw new Error('A Kafka topic is required')
   if (!value) throw new Error('A message value is required')
 
-  const producer = createKafka(config).producer()
-  try {
-    await producer.connect()
-    await producer.send({
-      topic: topic.trim(),
-      messages: [{ ...(key !== null ? { key } : {}), value }],
-    })
-  } finally {
-    await producer.disconnect()
-  }
+  const client = cache.get(config)
+  const producer = await client.producer()
+  await producer.send({
+    topic: topic.trim(),
+    messages: [{ ...(key !== null ? { key } : {}), value }],
+  })
 }
 
 function decode(buffer: Buffer | null): string | null {
@@ -358,20 +441,23 @@ function toKafkaMessage({ topic, partition, message }: EachMessagePayload): Kafk
 }
 
 export async function fetchKafkaMessages(
+  cache: KafkaClientCache,
   config: KafkaConnection,
   { topic, limit }: KafkaMessagesInput,
+  signal?: AbortSignal,
 ): Promise<KafkaMessage[]> {
   if (!topic.trim()) throw new Error('A Kafka topic is required')
   if (!Number.isInteger(limit) || limit < 1 || limit > 100)
     throw new Error('Message limit must be between 1 and 100')
 
-  const kafka = createKafka(config)
-  const admin = kafka.admin()
-  const groupId = `search-cluster-ui-${process.pid}-${Date.now()}`
+  const client = cache.get(config)
+  const admin = await client.admin()
+  const connectionId = ('id' in config && config.id) ? config.id : 'draft'
+  // Stable groupId per connection+topic so we don't leak consumer groups on every refresh
+  const groupId = `search-cluster-ui-${connectionId.slice(0, 8)}-${hashString(topic)}`
   let consumer: Consumer | undefined
 
   try {
-    await admin.connect()
     const offsets = await admin.fetchTopicOffsets(topic)
     if (!offsets.length) throw new Error(`Topic "${topic}" has no partitions`)
 
@@ -387,7 +473,7 @@ export async function fetchKafkaMessages(
     )
     const messages: KafkaMessage[] = []
     const finished = new Set<number>()
-    consumer = kafka.consumer({ groupId })
+    consumer = client.kafka.consumer({ groupId })
     await consumer.connect()
     await consumer.subscribe({ topic, fromBeginning: true })
     let completed = false
@@ -399,6 +485,7 @@ export async function fetchKafkaMessages(
     })
     let timer: ReturnType<typeof setTimeout>
     let idleTimer: ReturnType<typeof setTimeout> | null = null
+
     const finish = () => {
       if (completed) return
       completed = true
@@ -406,10 +493,12 @@ export async function fetchKafkaMessages(
       if (idleTimer) clearTimeout(idleTimer)
       void consumer?.stop().then(resolveDone, rejectDone)
     }
+
     const resetIdleTimer = () => {
       if (idleTimer) clearTimeout(idleTimer)
       idleTimer = setTimeout(finish, 1500)
     }
+
     timer = setTimeout(
       () => {
         if (completed) return
@@ -419,6 +508,16 @@ export async function fetchKafkaMessages(
       },
       Math.max(30_000, config.timeoutMs),
     )
+
+    const onAbort = () => {
+      if (completed) return
+      completed = true
+      clearTimeout(timer)
+      if (idleTimer) clearTimeout(idleTimer)
+      rejectDone(new Error('Request cancelled'))
+    }
+    signal?.addEventListener('abort', onAbort)
+
     consumer.on(consumer.events.GROUP_JOIN, ({ payload }) => {
       const assigned = payload.memberAssignment[topic] ?? []
       resetIdleTimer()
@@ -427,29 +526,37 @@ export async function fetchKafkaMessages(
         if (start !== undefined) {
           if (start >= (endOffsets.get(partition) ?? 0n)) finished.add(partition)
           else consumer?.seek({ topic, partition, offset: start.toString() })
-        }
-        else finished.add(partition)
+        } else finished.add(partition)
       }
       if (assigned.length === 0 || finished.size === offsets.length) finish()
     })
-    void consumer.run({
-      eachMessage: async (payload) => {
-        const message = toKafkaMessage(payload)
-        messages.push(message)
-        resetIdleTimer()
-        const end = endOffsets.get(payload.partition)
-        if (end !== undefined && BigInt(payload.message.offset) + 1n >= end)
-          finished.add(payload.partition)
-        if (messages.length >= limit || finished.size === offsets.length) finish()
-      },
-    }).catch((reason: unknown) => {
-      if (completed) return
-      completed = true
-      clearTimeout(timer)
-      if (idleTimer) clearTimeout(idleTimer)
-      rejectDone(reason instanceof Error ? reason : new Error(String(reason)))
-    })
-    await done
+
+    void consumer
+      .run({
+        eachMessage: async (payload) => {
+          const message = toKafkaMessage(payload)
+          messages.push(message)
+          resetIdleTimer()
+          const end = endOffsets.get(payload.partition)
+          if (end !== undefined && BigInt(payload.message.offset) + 1n >= end)
+            finished.add(payload.partition)
+          if (messages.length >= limit || finished.size === offsets.length) finish()
+        },
+      })
+      .catch((reason: unknown) => {
+        if (completed) return
+        completed = true
+        clearTimeout(timer)
+        if (idleTimer) clearTimeout(idleTimer)
+        rejectDone(reason instanceof Error ? reason : new Error(String(reason)))
+      })
+
+    try {
+      await done
+    } finally {
+      signal?.removeEventListener('abort', onAbort)
+    }
+
     return messages.sort((a, b) => {
       const timeDiff = Number(b.timestamp ?? 0) - Number(a.timestamp ?? 0)
       if (timeDiff) return timeDiff
@@ -461,10 +568,10 @@ export async function fetchKafkaMessages(
     try {
       if (consumer) {
         await consumer.stop().catch(() => undefined)
-        await consumer.disconnect()
+        await consumer.disconnect().catch(() => undefined)
       }
-    } finally {
-      await admin.disconnect()
+    } catch {
+      /* ignore */
     }
   }
 }

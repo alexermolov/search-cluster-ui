@@ -363,7 +363,7 @@ export interface ElectronApi {
   deleteKafkaTopic(connectionId: string, topic: string): Promise<void>
   fetchKafkaTopicPartitions(connectionId: string, topic: string): Promise<KafkaPartitionInfo[]>
   fetchKafkaConsumerGroups(connectionId: string): Promise<KafkaConsumerGroupInfo[]>
-  fetchKafkaMessages(connectionId: string, input: KafkaMessagesInput): Promise<KafkaMessage[]>
+  fetchKafkaMessages(connectionId: string, input: KafkaMessagesInput, requestId?: string): Promise<KafkaMessage[]>
   produceKafkaMessage(connectionId: string, input: KafkaMessageProduceInput): Promise<void>
   listRedisConnections(): Promise<StoredRedisConnection[]>
   saveRedisConnection(input: RedisConnectionInput): Promise<StoredRedisConnection>

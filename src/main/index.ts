@@ -39,7 +39,7 @@ function createMainWindow(): BrowserWindow {
 }
 
 app.whenReady().then(() => {
-  registerIpcHandlers(
+  const { kafkaCache } = registerIpcHandlers(
     new ConnectionStore(),
     new KafkaConnectionStore(),
     new RedisConnectionStore(),
@@ -49,6 +49,10 @@ app.whenReady().then(() => {
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createMainWindow()
+  })
+
+  app.on('before-quit', async () => {
+    await kafkaCache.disconnectAll()
   })
 })
 

@@ -31,6 +31,7 @@ import type { ConnectionStore } from './store/connections'
 import type { KafkaConnectionStore } from './store/kafka-connections'
 import type { RedisConnectionStore } from './store/redis-connections'
 import {
+  KafkaClientCache,
   createKafkaTopic,
   deleteKafkaTopic,
   fetchKafkaConsumerGroups,
@@ -125,10 +126,12 @@ export function registerIpcHandlers(
   store: ConnectionStore,
   kafkaStore: KafkaConnectionStore,
   redisStore: RedisConnectionStore,
-): void {
+): { kafkaCache: KafkaClientCache } {
   const cache = new ClientCache()
   const clientFor = (id: string): ClusterClient => cache.get(id, store.list())
   const aborts = new AbortRegistry()
+  const kafkaCache = new KafkaClientCache()
+
   const kafkaConfigFor = (id: string) => {
     const config = kafkaStore.list().find((connection) => connection.id === id)
     if (!config) throw new Error(`Kafka connection "${id}" not found`)
@@ -148,29 +151,38 @@ export function registerIpcHandlers(
   ipcMain.handle(IPC.KafkaConnectionsSave, (_e, input: KafkaConnectionInput) =>
     kafkaStore.save(input),
   )
-  ipcMain.handle(IPC.KafkaConnectionsDelete, (_e, id: string) => kafkaStore.delete(id))
+  ipcMain.handle(IPC.KafkaConnectionsDelete, (_e, id: string) => {
+    kafkaStore.delete(id)
+    kafkaCache.drop(id)
+  })
   ipcMain.handle(IPC.KafkaConnectionsTest, (_e, input: KafkaConnectionInput) =>
     testKafkaConnection(input),
   )
-  ipcMain.handle(IPC.KafkaTopics, (_e, id: string) => listKafkaTopics(kafkaConfigFor(id)))
+  ipcMain.handle(IPC.KafkaTopics, (_e, id: string) =>
+    listKafkaTopics(kafkaCache, kafkaConfigFor(id)),
+  )
   ipcMain.handle(IPC.KafkaTopicCreate, (_e, id: string, input: KafkaTopicCreateInput) =>
-    createKafkaTopic(kafkaConfigFor(id), input),
+    createKafkaTopic(kafkaCache, kafkaConfigFor(id), input),
   )
   ipcMain.handle(IPC.KafkaTopicDelete, (_e, id: string, topic: string) =>
-    deleteKafkaTopic(kafkaConfigFor(id), topic),
+    deleteKafkaTopic(kafkaCache, kafkaConfigFor(id), topic),
   )
   ipcMain.handle(IPC.KafkaTopicPartitions, (_e, id: string, topic: string) =>
-    fetchKafkaTopicPartitions(kafkaConfigFor(id), topic),
+    fetchKafkaTopicPartitions(kafkaCache, kafkaConfigFor(id), topic),
   )
   ipcMain.handle(IPC.KafkaConsumerGroups, (_e, id: string) =>
-    fetchKafkaConsumerGroups(kafkaConfigFor(id)),
+    fetchKafkaConsumerGroups(kafkaCache, kafkaConfigFor(id)),
   )
-  ipcMain.handle(IPC.KafkaMessages, (_e, id: string, input: KafkaMessagesInput) =>
-    fetchKafkaMessages(kafkaConfigFor(id), input),
-  )
+  ipcMain.handle(IPC.KafkaMessages, (_e, id: string, input: KafkaMessagesInput, requestId?: string) => {
+    const signal = aborts.signalFor(requestId)
+    return fetchKafkaMessages(kafkaCache, kafkaConfigFor(id), input, signal).finally(() =>
+      aborts.release(requestId),
+    )
+  })
   ipcMain.handle(IPC.KafkaMessageProduce, (_e, id: string, input: KafkaMessageProduceInput) =>
-    produceKafkaMessage(kafkaConfigFor(id), input),
+    produceKafkaMessage(kafkaCache, kafkaConfigFor(id), input),
   )
+
   ipcMain.handle(IPC.RedisConnectionsList, () => redisStore.list())
   ipcMain.handle(IPC.RedisConnectionsSave, (_e, input: RedisConnectionInput) =>
     redisStore.save(input),
@@ -436,4 +448,6 @@ export function registerIpcHandlers(
       .msearch(input.index ?? null, input.ndjson, signal)
       .finally(() => aborts.release(requestId))
   })
+
+  return { kafkaCache }
 }
