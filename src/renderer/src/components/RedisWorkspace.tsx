@@ -3,6 +3,16 @@ import type { RedisKeyDetail, RedisKeyType, RedisServerInfo, StoredRedisConnecti
 import type { RedisConnectionInput, RedisKeySaveInput } from '../../../shared/types'
 import { api, errorMessage } from '../api'
 
+function formatUptime(seconds: number | null): string {
+  if (seconds === null) return '—'
+  const days = Math.floor(seconds / 86400)
+  const hours = Math.floor((seconds % 86400) / 3600)
+  const mins = Math.floor((seconds % 3600) / 60)
+  if (days > 0) return `${days}d ${hours}h ${mins}m`
+  if (hours > 0) return `${hours}h ${mins}m`
+  return `${mins}m`
+}
+
 const EMPTY_TLS = {
   enabled: false,
   rejectUnauthorized: true,
@@ -107,7 +117,7 @@ function RedisConnectionForm({ connection, onClose, onSave }: ConnectionFormProp
     setTestResult(null)
     try {
       const info = await api.testRedisConnection(draft)
-      setTestResult(`Connected · Redis ${info.version} · ${info.mode}`)
+      setTestResult(`Connected · Redis ${info.version} · ${info.mode}${info.role ? ` · ${info.role}` : ''}`)
     } catch (reason) {
       setTestResult(`Failed: ${errorMessage(reason)}`)
     } finally {
@@ -1034,7 +1044,7 @@ export function RedisWorkspace({ onClose }: { onClose: () => void }) {
                 <div className="redis-command-history">
                   {commandOutput.map((entry, index) => (
                     <article className="redis-command-result" key={`${index}-${entry.command}`}>
-                      <div className="redis-command-line"><span>&gt;</span> {entry.command}</div>
+                      <div className="redis-command-line"><span>{'>'}</span> {entry.command}</div>
                       <pre className={entry.error ? 'redis-command-error' : ''}>
                         {entry.error ?? JSON.stringify(entry.result, null, 2)}
                       </pre>
@@ -1058,10 +1068,23 @@ export function RedisWorkspace({ onClose }: { onClose: () => void }) {
                 {server && (
                   <>
                     <div className="redis-metrics">
-                      <article><span>Mode</span><strong>{server.mode}</strong></article>
+                      <article><span>Mode</span><strong>{server.mode}{server.role ? ` · ${server.role}` : ''}</strong></article>
                       <article><span>Connected clients</span><strong>{server.connectedClients ?? '—'}</strong></article>
+                      <article><span>Blocked clients</span><strong>{server.blockedClients ?? '—'}</strong></article>
                       <article><span>Used memory</span><strong>{serverLabel(server.usedMemory)}</strong></article>
-                      <article><span>Uptime</span><strong>{server.uptimeSeconds === null ? '—' : `${Math.floor(server.uptimeSeconds / 3600)}h`}</strong></article>
+                      <article><span>Memory RSS</span><strong>{serverLabel(server.usedMemoryRss)}</strong></article>
+                      <article><span>Memory limit</span><strong>{serverLabel(server.maxmemory)}</strong></article>
+                      <article><span>Maxmemory policy</span><strong>{server.maxmemoryPolicy ?? '—'}</strong></article>
+                      <article><span>Uptime</span><strong>{formatUptime(server.uptimeSeconds)}</strong></article>
+                      <article><span>Ops/sec</span><strong>{server.instantaneousOpsPerSec ?? '—'}</strong></article>
+                      <article><span>Total commands</span><strong>{server.totalCommandsProcessed?.toLocaleString() ?? '—'}</strong></article>
+                      <article><span>Expired keys</span><strong>{server.expiredKeys?.toLocaleString() ?? '—'}</strong></article>
+                      <article><span>Evicted keys</span><strong>{server.evictedKeys?.toLocaleString() ?? '—'}</strong></article>
+                      <article><span>Connected slaves</span><strong>{server.connectedSlaves ?? '—'}</strong></article>
+                      <article><span>Master link</span><strong>{server.masterLinkStatus ?? '—'}</strong></article>
+                      <article><span>CPU sys</span><strong>{server.usedCpuSys ?? '—'}</strong></article>
+                      <article><span>CPU user</span><strong>{server.usedCpuUser ?? '—'}</strong></article>
+                      <article><span>Total keys</span><strong>{server.totalKeys.toLocaleString()}</strong></article>
                     </div>
                     <div className="redis-section-heading redis-db-heading">
                       <h2>Databases</h2>

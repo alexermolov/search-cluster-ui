@@ -138,13 +138,34 @@ export interface RedisKeyPage {
   keys: RedisKeyEntry[]
 }
 
+export type RedisServerMode = 'standalone' | 'cluster' | 'sentinel'
+
 export interface RedisServerInfo {
   version: string
-  mode: string
+  mode: RedisServerMode
+  role: 'master' | 'slave' | 'sentinel' | null
+  os: string | null
+  archBits: number | null
+  tcpPort: number | null
   connectedClients: number | null
+  blockedClients: number | null
   usedMemory: string | null
+  usedMemoryRss: string | null
+  maxmemory: string | null
+  maxmemoryPolicy: string | null
   uptimeSeconds: number | null
+  instantaneousOpsPerSec: number | null
+  totalCommandsProcessed: number | null
+  keyspaceHits: number | null
+  keyspaceMisses: number | null
+  expiredKeys: number | null
+  evictedKeys: number | null
+  connectedSlaves: number | null
+  masterLinkStatus: 'up' | 'down' | null
+  usedCpuSys: number | null
+  usedCpuUser: number | null
   databases: Array<{ name: string; keys: number; expires: number }>
+  totalKeys: number
 }
 
 export type AuthConfig =

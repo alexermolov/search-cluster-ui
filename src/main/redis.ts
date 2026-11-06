@@ -8,6 +8,7 @@ import type {
   RedisKeySaveInput,
   RedisKeyType,
   RedisKeyValue,
+  RedisServerMode,
   RedisServerInfo,
   StoredRedisConnection,
 } from '../shared/types'
@@ -130,10 +131,32 @@ function parseInfo(text: string): Record<string, string> {
   return result
 }
 
-function toServerInfo(server: string, clients: string, memory: string, keyspace: string): RedisServerInfo {
+function toNumber(value: string | undefined): number | null {
+  const n = Number(value)
+  return Number.isFinite(n) ? n : null
+}
+
+function normalizeMode(value: string | undefined): RedisServerMode {
+  if (value === 'cluster' || value === 'sentinel') return value
+  return 'standalone'
+}
+
+function toServerInfo(
+  server: string,
+  clients: string,
+  memory: string,
+  keyspace: string,
+  stats: string,
+  replication: string,
+  cpu: string,
+): RedisServerInfo {
   const serverInfo = parseInfo(server)
   const clientInfo = parseInfo(clients)
   const memoryInfo = parseInfo(memory)
+  const statsInfo = parseInfo(stats)
+  const replInfo = parseInfo(replication)
+  const cpuInfo = parseInfo(cpu)
+
   const databases = Object.entries(parseInfo(keyspace))
     .filter(([name]) => /^db\d+$/.test(name))
     .map(([name, value]) => {
@@ -145,26 +168,49 @@ function toServerInfo(server: string, clients: string, memory: string, keyspace:
       }
     })
     .sort((a, b) => a.name.localeCompare(b.name))
-  const connectedClients = Number(clientInfo.connected_clients)
-  const uptimeSeconds = Number(serverInfo.uptime_in_seconds)
+
+  const totalKeys = databases.reduce((sum, db) => sum + db.keys, 0)
+
   return {
     version: serverInfo.redis_version ?? 'unknown',
-    mode: serverInfo.redis_mode ?? 'standalone',
-    connectedClients: Number.isFinite(connectedClients) ? connectedClients : null,
+    mode: normalizeMode(serverInfo.redis_mode),
+    role: (replInfo.role as RedisServerInfo['role']) ?? null,
+    os: serverInfo.os ?? null,
+    archBits: toNumber(serverInfo.arch_bits),
+    tcpPort: toNumber(serverInfo.tcp_port),
+    connectedClients: toNumber(clientInfo.connected_clients),
+    blockedClients: toNumber(clientInfo.blocked_clients),
     usedMemory: memoryInfo.used_memory_human ?? null,
-    uptimeSeconds: Number.isFinite(uptimeSeconds) ? uptimeSeconds : null,
+    usedMemoryRss: memoryInfo.used_memory_rss_human ?? null,
+    maxmemory: memoryInfo.maxmemory_human ?? null,
+    maxmemoryPolicy: memoryInfo.maxmemory_policy ?? null,
+    uptimeSeconds: toNumber(serverInfo.uptime_in_seconds),
+    instantaneousOpsPerSec: toNumber(statsInfo.instantaneous_ops_per_sec),
+    totalCommandsProcessed: toNumber(statsInfo.total_commands_processed),
+    keyspaceHits: toNumber(statsInfo.keyspace_hits),
+    keyspaceMisses: toNumber(statsInfo.keyspace_misses),
+    expiredKeys: toNumber(statsInfo.expired_keys),
+    evictedKeys: toNumber(statsInfo.evicted_keys),
+    connectedSlaves: toNumber(replInfo.connected_slaves),
+    masterLinkStatus: replInfo.master_link_status === 'up' ? 'up' : replInfo.master_link_status === 'down' ? 'down' : null,
+    usedCpuSys: toNumber(cpuInfo.used_cpu_sys),
+    usedCpuUser: toNumber(cpuInfo.used_cpu_user),
     databases,
+    totalKeys,
   }
 }
 
 async function serverInfo(client: RedisClient): Promise<RedisServerInfo> {
-  const [server, clients, memory, keyspace] = await Promise.all([
+  const [server, clients, memory, keyspace, stats, replication, cpu] = await Promise.all([
     client.info('server'),
     client.info('clients'),
     client.info('memory'),
     client.info('keyspace'),
+    client.info('stats'),
+    client.info('replication'),
+    client.info('cpu'),
   ])
-  return toServerInfo(server, clients, memory, keyspace)
+  return toServerInfo(server, clients, memory, keyspace, stats, replication, cpu)
 }
 
 export async function testRedisConnection(config: RedisConfig): Promise<RedisServerInfo> {
