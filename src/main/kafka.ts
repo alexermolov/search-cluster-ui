@@ -304,6 +304,7 @@ export async function fetchKafkaConsumerGroups(
   cache: KafkaClientCache,
   config: KafkaConnection,
   topic?: string,
+  includeLag = true,
 ): Promise<KafkaConsumerGroupInfo[]> {
   const client = cache.get(config)
   const admin = await client.admin()
@@ -324,45 +325,49 @@ export async function fetchKafkaConsumerGroups(
 
   // Keep the number of concurrent broker requests bounded on large clusters.
   const offsetMap = new Map<string, Map<string, Map<number, string>>>()
-  for (let offset = 0; offset < relevantGroupIds.length; offset += KAFKA_OFFSET_CONCURRENCY) {
-    await Promise.all(
-      relevantGroupIds.slice(offset, offset + KAFKA_OFFSET_CONCURRENCY).map(async (groupId) => {
-        try {
-          const offsets = await admin.fetchOffsets({ groupId, resolveOffsets: true })
-          const topicMap = new Map<string, Map<number, string>>()
-          for (const topicOffset of offsets) {
-            const partitionMap = new Map<number, string>()
-            for (const po of topicOffset.partitions) {
-              partitionMap.set(po.partition, po.offset)
+  if (includeLag) {
+    for (let offset = 0; offset < relevantGroupIds.length; offset += KAFKA_OFFSET_CONCURRENCY) {
+      await Promise.all(
+        relevantGroupIds.slice(offset, offset + KAFKA_OFFSET_CONCURRENCY).map(async (groupId) => {
+          try {
+            const offsets = await admin.fetchOffsets({ groupId, resolveOffsets: true })
+            const topicMap = new Map<string, Map<number, string>>()
+            for (const topicOffset of offsets) {
+              const partitionMap = new Map<number, string>()
+              for (const po of topicOffset.partitions) {
+                partitionMap.set(po.partition, po.offset)
+              }
+              topicMap.set(topicOffset.topic, partitionMap)
             }
-            topicMap.set(topicOffset.topic, partitionMap)
+            offsetMap.set(groupId, topicMap)
+          } catch {
+            // Group may not have offsets yet
           }
-          offsetMap.set(groupId, topicMap)
-        } catch {
-          // Group may not have offsets yet
-        }
-      }),
-    )
+        }),
+      )
+    }
   }
 
   // Fetch high watermarks for relevant topics in parallel
   const allTopics = new Set<string>()
-  for (const desc of descriptions) {
-    if (topic && !relevantGroupIds.includes(desc.groupId)) continue
-    for (const member of desc.members) {
-      const assignments = parseMemberAssignment(member.memberAssignment)
-      for (const assignedTopic of Object.keys(assignments)) {
-        allTopics.add(assignedTopic)
+  if (includeLag) {
+    for (const desc of descriptions) {
+      if (topic && !relevantGroupIds.includes(desc.groupId)) continue
+      for (const member of desc.members) {
+        const assignments = parseMemberAssignment(member.memberAssignment)
+        for (const assignedTopic of Object.keys(assignments)) {
+          allTopics.add(assignedTopic)
+        }
+      }
+    }
+    for (const topicMap of offsetMap.values()) {
+      for (const offsetTopic of topicMap.keys()) {
+        allTopics.add(offsetTopic)
       }
     }
   }
-  for (const topicMap of offsetMap.values()) {
-    for (const offsetTopic of topicMap.keys()) {
-      allTopics.add(offsetTopic)
-    }
-  }
 
-  const topicsToFetch = topic ? [topic] : Array.from(allTopics)
+  const topicsToFetch = includeLag ? (topic ? [topic] : Array.from(allTopics)) : []
   const topicHighOffsets = new Map<string, Map<number, string>>()
   for (let offset = 0; offset < topicsToFetch.length; offset += KAFKA_OFFSET_CONCURRENCY) {
     await Promise.all(

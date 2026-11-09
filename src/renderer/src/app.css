@@ -421,6 +421,14 @@ body {
   gap: 8px;
 }
 
+.kafka-browser-tabs {
+  margin: 0;
+}
+
+.kafka-browser-tabs .kafka-detail-tab {
+  flex: 1;
+}
+
 .kafka-topic-list,
 .kafka-message-list {
   flex: 1;
@@ -432,6 +440,92 @@ body {
   display: flex;
   flex-direction: column;
   gap: 3px;
+}
+
+.kafka-consumer-list {
+  gap: 10px;
+}
+
+.kafka-browser-group {
+  flex: 0 0 auto;
+  min-width: 0;
+  margin: 0;
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius);
+  background: var(--bg-panel);
+}
+
+.kafka-browser-group .kafka-consumer-group-header {
+  min-width: 0;
+  gap: 8px;
+}
+
+.kafka-browser-group .group-id {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.kafka-browser-group-body {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 10px 12px;
+}
+
+.kafka-browser-group-body .group-members {
+  margin: 0;
+}
+
+.kafka-browser-member {
+  min-width: 0;
+  padding-top: 9px;
+  border-top: 1px solid var(--border-soft);
+}
+
+.kafka-browser-member-name {
+  overflow: hidden;
+  font: 11px var(--mono);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.kafka-browser-member-host {
+  overflow: hidden;
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.kafka-subscribed-topics {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  margin-top: 7px;
+}
+
+.kafka-subscribed-topic {
+  max-width: 100%;
+  padding: 3px 7px;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--bg-elevated);
+  color: var(--accent);
+  font: 11px var(--mono);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.kafka-subscribed-topic:hover {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 10%, var(--bg-elevated));
+}
+
+.kafka-browser-no-members {
+  padding-top: 8px;
+  border-top: 1px solid var(--border-soft);
+  font-size: 11px;
 }
 
 .kafka-topic {

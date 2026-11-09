@@ -173,8 +173,8 @@ export function registerIpcHandlers(
   ipcMain.handle(IPC.KafkaTopicPartitions, (_e, id: string, topic: string) =>
     fetchKafkaTopicPartitions(kafkaCache, kafkaConfigFor(id), topic),
   )
-  ipcMain.handle(IPC.KafkaConsumerGroups, (_e, id: string, topic?: string) =>
-    fetchKafkaConsumerGroups(kafkaCache, kafkaConfigFor(id), topic),
+  ipcMain.handle(IPC.KafkaConsumerGroups, (_e, id: string, topic?: string, includeLag?: boolean) =>
+    fetchKafkaConsumerGroups(kafkaCache, kafkaConfigFor(id), topic, includeLag),
   )
   ipcMain.handle(IPC.KafkaMessages, (_e, id: string, input: KafkaMessagesInput, requestId?: string) => {
     const signal = aborts.signalFor(requestId)
