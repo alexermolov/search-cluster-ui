@@ -948,13 +948,15 @@ export function KafkaWorkspace({ onClose }: { onClose: () => void }) {
             <button className="btn btn-primary" onClick={() => setEditor(null)}>+ Add Kafka connection</button>
           </div>
         ) : (
-          <div className="kafka-content">
+          <div className={`kafka-content${viewMode === 'consumers' ? ' kafka-consumers-mode' : ''}`}>
             <section className="kafka-topics">
               <div className="kafka-section-heading">
                 <h2>{viewMode === 'topics' ? 'Topics' : 'Consumers'}</h2>
                 <div className="kafka-topic-actions">
                   <span className="muted">
-                    {viewMode === 'topics' ? topics.length : consumerGroups.length}
+                    {viewMode === 'topics'
+                      ? topics.length
+                      : `${consumerGroups.reduce((count, group) => count + group.members.length, 0)} consumers · ${consumerGroups.length} groups`}
                   </span>
                   {viewMode === 'topics' && (
                     <button className="btn" onClick={() => setCreatingTopic(true)}>+ Create</button>

@@ -260,39 +260,44 @@ export async function fetchKafkaTopicPartitions(
 function parseMemberAssignment(buffer: Buffer): Record<string, number[]> {
   try {
     let offset = 0
-    const readInt16 = () => {
+    const readInt16 = (): number => {
+      if (offset + 2 > buffer.length) throw new Error('Invalid member assignment')
       const val = buffer.readInt16BE(offset)
       offset += 2
       return val
     }
-    const readInt32 = () => {
+    const readInt32 = (): number => {
+      if (offset + 4 > buffer.length) throw new Error('Invalid member assignment')
       const val = buffer.readInt32BE(offset)
       offset += 4
       return val
     }
-    const readString = () => {
+    const readString = (): string => {
       const len = readInt16()
       if (len < 0) return ''
+      if (offset + len > buffer.length) throw new Error('Invalid member assignment')
       const str = buffer.toString('utf8', offset, offset + len)
       offset += len
       return str
     }
-    // Version
+    // MemberAssignment v0: version, topic/partition arrays, then user data.
     readInt16()
-    const topicCount = readInt32()
-    const topics: string[] = []
-    for (let i = 0; i < topicCount; i++) {
-      topics.push(readString())
+    const assignmentCount = readInt32()
+    if (assignmentCount < 0 || assignmentCount > buffer.length / 6) {
+      throw new Error('Invalid member assignment')
     }
-    const partitionCount = readInt32()
-    const partitions: number[] = []
-    for (let i = 0; i < partitionCount; i++) {
-      partitions.push(readInt32())
-    }
-    // Assign all partitions to all topics (simplified; in reality assignment is per-topic)
     const result: Record<string, number[]> = {}
-    for (const topic of topics) {
-      result[topic] = [...partitions]
+    for (let i = 0; i < assignmentCount; i++) {
+      const topic = readString()
+      const partitionCount = readInt32()
+      if (!topic || partitionCount < 0 || partitionCount > buffer.length / 4) {
+        throw new Error('Invalid member assignment')
+      }
+      const partitions: number[] = []
+      for (let j = 0; j < partitionCount; j++) {
+        partitions.push(readInt32())
+      }
+      result[topic] = partitions
     }
     return result
   } catch {

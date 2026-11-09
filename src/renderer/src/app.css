@@ -391,6 +391,18 @@ body {
   grid-template-columns: minmax(220px, 280px) minmax(0, 1fr);
 }
 
+.kafka-content.kafka-consumers-mode {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.kafka-consumers-mode .kafka-messages {
+  display: none;
+}
+
+.kafka-consumers-mode .kafka-topics {
+  border-right: 0;
+}
+
 .kafka-topics {
   min-height: 0;
   display: flex;
@@ -444,6 +456,7 @@ body {
 
 .kafka-consumer-list {
   gap: 10px;
+  padding: 2px;
 }
 
 .kafka-browser-group {
