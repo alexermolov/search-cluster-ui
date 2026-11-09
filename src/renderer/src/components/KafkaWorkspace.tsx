@@ -567,6 +567,7 @@ export function KafkaWorkspace({ onClose }: { onClose: () => void }) {
   const [topics, setTopics] = useState<KafkaTopicInfo[]>([])
   const [topicFilter, setTopicFilter] = useState('')
   const [consumerFilter, setConsumerFilter] = useState('')
+  const [selectedConsumerGroupId, setSelectedConsumerGroupId] = useState('')
   const [selectedTopic, setSelectedTopic] = useState('')
   const [messages, setMessages] = useState<KafkaMessage[]>([])
   const [totalMessages, setTotalMessages] = useState(0)
@@ -614,21 +615,28 @@ export function KafkaWorkspace({ onClose }: { onClose: () => void }) {
   }, [topics, topicFilter])
   const visibleConsumerGroups = useMemo(() => {
     const needle = consumerFilter.trim().toLocaleLowerCase()
-    return consumerGroups.flatMap((group) => {
-      const groupMatches = [
+    return consumerGroups.filter((group) => {
+      return [
         group.groupId,
         group.state,
         group.protocol,
+        ...group.members.flatMap((member) => [
+          member.clientId,
+          member.clientHost,
+          member.memberId,
+          ...member.assignments.map((assignment) => assignment.topic),
+        ]),
       ].some((value) => value.toLocaleLowerCase().includes(needle))
-      const members = group.members.filter((member) => groupMatches || [
-        member.clientId,
-        member.clientHost,
-        member.memberId,
-        ...member.assignments.map((assignment) => assignment.topic),
-      ].some((value) => value.toLocaleLowerCase().includes(needle)))
-      return groupMatches || members.length > 0 ? [{ ...group, visibleMembers: members }] : []
     })
   }, [consumerGroups, consumerFilter])
+  const selectedConsumerGroup = consumerGroups.find(
+    (group) => group.groupId === selectedConsumerGroupId,
+  ) ?? null
+  const selectedConsumerTopics = selectedConsumerGroup
+    ? [...new Set(selectedConsumerGroup.members.flatMap((member) =>
+        member.assignments.map((assignment) => assignment.topic),
+      ))].sort((a, b) => a.localeCompare(b))
+    : []
 
   async function reloadTopics(connectionId: string): Promise<void> {
     cancelSearch()
@@ -659,10 +667,12 @@ export function KafkaWorkspace({ onClose }: { onClose: () => void }) {
     setLoadingConsumers(true)
     setError(null)
     setConsumerGroups([])
+    setSelectedConsumerGroupId('')
     try {
       const result = await api.fetchKafkaConsumerGroups(connectionId, undefined, false)
       if (request !== consumerRequest.current) return
       setConsumerGroups(result)
+      setSelectedConsumerGroupId(result[0]?.groupId ?? '')
     } catch (reason) {
       if (request !== consumerRequest.current) return
       setError(errorMessage(reason))
@@ -1016,43 +1026,18 @@ export function KafkaWorkspace({ onClose }: { onClose: () => void }) {
               ) : (
                 <div className="kafka-topic-list kafka-consumer-list">
                   {visibleConsumerGroups.map((group) => (
-                    <article className="kafka-browser-group" key={group.groupId}>
-                      <div className="kafka-consumer-group-header">
-                        <span className="group-id" title={group.groupId}>{group.groupId}</span>
+                    <button
+                      className={`kafka-consumer-row${selectedConsumerGroupId === group.groupId ? ' active' : ''}`}
+                      key={group.groupId}
+                      onClick={() => setSelectedConsumerGroupId(group.groupId)}
+                      title={group.groupId}
+                    >
+                      <span className="kafka-consumer-row-name">{group.groupId}</span>
+                      <span className="kafka-consumer-row-meta">
                         <span className={`group-state state-${group.state.toLowerCase()}`}>{group.state}</span>
-                      </div>
-                      <div className="kafka-browser-group-body">
-                        <div className="group-members">
-                          Protocol: {group.protocol || '—'} · Members: {group.members.length}
-                        </div>
-                        {group.visibleMembers.length > 0 ? group.visibleMembers.map((member) => (
-                          <div className="kafka-browser-member" key={member.memberId}>
-                            <div className="kafka-browser-member-name" title={member.clientId}>
-                              {member.clientId || member.memberId}
-                            </div>
-                            <div className="muted kafka-browser-member-host" title={member.clientHost}>
-                              {member.clientHost}
-                            </div>
-                            <div className="kafka-subscribed-topics">
-                              {member.assignments.length > 0 ? member.assignments.map((assignment) => (
-                                <button
-                                  className="kafka-subscribed-topic"
-                                  key={assignment.topic}
-                                  title={`Open ${assignment.topic}`}
-                                  onClick={() => openSubscribedTopic(assignment.topic)}
-                                >
-                                  {assignment.topic} <span aria-hidden="true">→</span>
-                                </button>
-                              )) : <span className="muted">No active topic assignments</span>}
-                            </div>
-                          </div>
-                        )) : (
-                          <div className="muted kafka-browser-no-members">
-                            No active members or topic assignments
-                          </div>
-                        )}
-                      </div>
-                    </article>
+                        <span className="muted">{group.members.length} members</span>
+                      </span>
+                    </button>
                   ))}
                   {!loadingConsumers && consumerGroups.length === 0 && (
                     <div className="muted kafka-empty-topics">No consumer groups found</div>
@@ -1065,6 +1050,99 @@ export function KafkaWorkspace({ onClose }: { onClose: () => void }) {
               )}
             </section>
 
+            {viewMode === 'consumers' ? (
+              <section className="kafka-consumer-details">
+                {loadingConsumers ? (
+                  <div className="muted kafka-consumer-placeholder">Loading consumers…</div>
+                ) : !selectedConsumerGroup ? (
+                  <div className="muted kafka-consumer-placeholder">
+                    {consumerGroups.length === 0
+                      ? 'No consumer groups found'
+                      : 'Select a consumer group to view its details'}
+                  </div>
+                ) : (
+                  <>
+                    <div className="kafka-consumer-detail-header">
+                      <div>
+                        <div className="muted kafka-consumer-eyebrow">Consumer group</div>
+                        <h2 title={selectedConsumerGroup.groupId}>{selectedConsumerGroup.groupId}</h2>
+                      </div>
+                      <span className={`group-state state-${selectedConsumerGroup.state.toLowerCase()}`}>
+                        {selectedConsumerGroup.state}
+                      </span>
+                    </div>
+                    <div className="kafka-consumer-summary">
+                      <div>
+                        <span className="muted">Protocol</span>
+                        <strong>{selectedConsumerGroup.protocol || '—'}</strong>
+                      </div>
+                      <div>
+                        <span className="muted">Members</span>
+                        <strong>{selectedConsumerGroup.members.length}</strong>
+                      </div>
+                      <div>
+                        <span className="muted">Topics</span>
+                        <strong>{selectedConsumerTopics.length}</strong>
+                      </div>
+                    </div>
+                    <div className="kafka-consumer-detail-section">
+                      <div className="kafka-section-heading">
+                        <h3>Subscribed topics</h3>
+                        <span className="muted">{selectedConsumerTopics.length}</span>
+                      </div>
+                      {selectedConsumerTopics.length > 0 ? (
+                        <div className="kafka-consumer-topic-list">
+                          {selectedConsumerTopics.map((topic) => (
+                            <button
+                              className="kafka-subscribed-topic"
+                              key={topic}
+                              title={`Open ${topic}`}
+                              onClick={() => openSubscribedTopic(topic)}
+                            >
+                              {topic} <span aria-hidden="true">→</span>
+                            </button>
+                          ))}
+                        </div>
+                      ) : (
+                        <div className="muted kafka-consumer-empty">
+                          No active topic assignments
+                        </div>
+                      )}
+                    </div>
+                    <div className="kafka-consumer-detail-section">
+                      <div className="kafka-section-heading">
+                        <h3>Members</h3>
+                        <span className="muted">{selectedConsumerGroup.members.length}</span>
+                      </div>
+                      {selectedConsumerGroup.members.length > 0 ? (
+                        <div className="kafka-consumer-members">
+                          {selectedConsumerGroup.members.map((member) => (
+                            <div className="kafka-consumer-member" key={member.memberId}>
+                              <div className="kafka-consumer-member-info">
+                                <span className="kafka-browser-member-name" title={member.clientId}>
+                                  {member.clientId || member.memberId}
+                                </span>
+                                <span className="muted kafka-browser-member-host" title={member.clientHost}>
+                                  {member.clientHost}
+                                </span>
+                              </div>
+                              <span className="muted">
+                                {member.assignments.reduce(
+                                  (count, assignment) => count + assignment.partitions.length,
+                                  0,
+                                )} partitions
+                              </span>
+                            </div>
+                          ))}
+                        </div>
+                      ) : (
+                        <div className="muted kafka-consumer-empty">No active members</div>
+                      )}
+                    </div>
+                  </>
+                )}
+              </section>
+            ) : (
             <section className="kafka-messages">
               <div className="kafka-message-tools">
                 <div className="kafka-tool-group">
@@ -1219,6 +1297,7 @@ export function KafkaWorkspace({ onClose }: { onClose: () => void }) {
                 )}
               </div>
             </section>
+            )}
           </div>
         )}
       </main>
