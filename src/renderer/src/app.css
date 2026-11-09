@@ -494,11 +494,11 @@ body {
 
 .kafka-message-tools > .input:first-child {
   flex: 1;
-  min-width: 100px;
+  min-width: 320px;
 }
 
 .kafka-limit {
-  width: 82px;
+  width: 60px;
 }
 
 .kafka-search-status {
