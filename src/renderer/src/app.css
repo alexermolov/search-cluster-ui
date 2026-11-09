@@ -478,27 +478,67 @@ body {
 
 .kafka-message-tools {
   display: flex;
-  gap: 8px;
+  flex-direction: column;
+  gap: 10px;
 }
 
-.kafka-message-tools > .btn,
-.kafka-message-tools > .input {
+.kafka-tool-group {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+
+.kafka-tool-label {
+  flex: 0 0 100px;
+  color: var(--text-dim);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.kafka-tool-controls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  flex: 1;
+}
+
+.kafka-tool-controls > .btn,
+.kafka-tool-controls > .input {
   height: 30px;
   padding: 4px 8px;
   font-size: 12px;
 }
 
-.kafka-message-tools > .btn {
+.kafka-tool-controls > .btn {
   white-space: nowrap;
 }
 
-.kafka-message-tools > .input:first-child {
+.kafka-search-input {
   flex: 1;
-  min-width: 320px;
+  min-width: 180px;
+}
+
+.kafka-mode {
+  min-width: 145px;
+}
+
+.kafka-partition {
+  min-width: 120px;
+}
+
+.kafka-offset {
+  width: 140px;
 }
 
 .kafka-limit {
-  max-width: 120px;
+  min-width: 125px;
+}
+
+.kafka-offset-hint {
+  font-size: 11px;
+  white-space: nowrap;
 }
 
 .kafka-search-status {
@@ -615,7 +655,17 @@ body {
     grid-template-columns: 190px minmax(0, 1fr);
   }
 
-  .kafka-message-tools {
+  .kafka-tool-group {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 6px;
+  }
+
+  .kafka-tool-label {
+    flex-basis: auto;
+  }
+
+  .kafka-tool-controls {
     flex-wrap: wrap;
   }
 }

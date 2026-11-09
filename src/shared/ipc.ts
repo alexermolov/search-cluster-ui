@@ -158,12 +158,16 @@ export interface MsearchInput {
   ndjson: string
 }
 
-export interface KafkaMessagesInput {
+interface KafkaMessagesBaseInput {
   topic: string
   limit: number
 }
 
-export interface KafkaSearchInput extends KafkaMessagesInput {
+export type KafkaMessagesInput =
+  | (KafkaMessagesBaseInput & { mode: 'beginning' | 'end' })
+  | (KafkaMessagesBaseInput & { mode: 'offset'; partition: number; offset: string })
+
+export interface KafkaSearchInput extends KafkaMessagesBaseInput {
   query: string
 }
 

@@ -516,9 +516,10 @@ function kafkaMessageMatches(
 export async function fetchKafkaMessages(
   cache: KafkaClientCache,
   config: KafkaConnection,
-  { topic, limit }: KafkaMessagesInput,
+  input: KafkaMessagesInput,
   signal?: AbortSignal,
 ): Promise<KafkaMessagesResult> {
+  const { topic, limit } = input
   if (!topic.trim()) throw new Error('A Kafka topic is required')
   if (!Number.isInteger(limit) || limit < 1 || limit > 100)
     throw new Error('Message limit must be between 1 and 100')
@@ -535,12 +536,47 @@ export async function fetchKafkaMessages(
     if (!offsets.length) throw new Error(`Topic "${topic}" has no partitions`)
 
     const total = offsets.reduce((sum, item) => sum + (BigInt(item.high) - BigInt(item.low)), 0n)
-    const perPartitionLimit = Math.ceil(limit / offsets.length)
-    const endOffsets = new Map(offsets.map((item) => [item.partition, BigInt(item.high)]))
+    const activeOffsets =
+      input.mode === 'offset'
+        ? offsets.filter((item) => item.partition === input.partition)
+        : offsets
+    if (input.mode === 'offset') {
+      if (!Number.isInteger(input.partition) || input.partition < 0)
+        throw new Error('Partition must be a non-negative integer')
+      if (!/^\d+$/.test(input.offset))
+        throw new Error('Offset must be a non-negative integer')
+      const selected = activeOffsets[0]
+      if (!selected) throw new Error(`Partition ${input.partition} does not exist in "${topic}"`)
+      const requestedOffset = BigInt(input.offset)
+      const low = BigInt(selected.low)
+      const high = BigInt(selected.high)
+      if (requestedOffset < low || requestedOffset > high)
+        throw new Error(`Offset must be between ${low} and ${high} for partition ${input.partition}`)
+    }
+
+    const perPartitionLimit = Math.ceil(limit / activeOffsets.length)
+    const endOffsets = new Map(
+      offsets.map((item) => {
+        const low = BigInt(item.low)
+        const high = BigInt(item.high)
+        if (input.mode === 'beginning') {
+          const end = low + BigInt(perPartitionLimit)
+          return [item.partition, end < high ? end : high]
+        }
+        return [item.partition, high]
+      }),
+    )
     const starts = new Map(
       offsets.map((item) => {
         const low = BigInt(item.low)
         const high = BigInt(item.high)
+        if (input.mode === 'beginning') return [item.partition, low]
+        if (input.mode === 'offset') {
+          return [
+            item.partition,
+            item.partition === input.partition ? BigInt(input.offset) : high,
+          ]
+        }
         const start = high > BigInt(perPartitionLimit) ? high - BigInt(perPartitionLimit) : 0n
         return [item.partition, start > low ? start : low]
       }),
@@ -631,7 +667,14 @@ export async function fetchKafkaMessages(
       signal?.removeEventListener('abort', onAbort)
     }
 
-    return { messages: messages.sort(compareKafkaMessages), total: Number(total) }
+    return {
+      messages: messages.sort(
+        input.mode === 'end'
+          ? compareKafkaMessages
+          : (a, b) => compareKafkaMessages(b, a),
+      ),
+      total: Number(total),
+    }
   } finally {
     try {
       if (consumer) {

@@ -574,6 +574,9 @@ export function KafkaWorkspace({ onClose }: { onClose: () => void }) {
   const [searching, setSearching] = useState(false)
   const [searchCancelled, setSearchCancelled] = useState(false)
   const [limit, setLimit] = useState(20)
+  const [fetchMode, setFetchMode] = useState<'beginning' | 'end' | 'offset'>('end')
+  const [offsetPartition, setOffsetPartition] = useState(0)
+  const [messageOffset, setMessageOffset] = useState('0')
   const [loadingTopics, setLoadingTopics] = useState(false)
   const [loadingMessages, setLoadingMessages] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -677,15 +680,25 @@ export function KafkaWorkspace({ onClose }: { onClose: () => void }) {
 
   async function loadMessages(topic = selectedTopic): Promise<void> {
     if (!active || !topic) return
+    const partition = topic === selectedTopic ? offsetPartition : 0
+    if (fetchMode === 'offset' && !/^\d+$/.test(messageOffset.trim())) {
+      setError('Offset must be a non-negative integer')
+      return
+    }
     cancelSearch()
     const request = ++messageRequest.current
     const connectionId = active.id
     setSelectedTopic(topic)
+    if (topic !== selectedTopic) setOffsetPartition(0)
     setSearchResults(null)
     setLoadingMessages(true)
     setError(null)
     try {
-      const result = await api.fetchKafkaMessages(connectionId, { topic, limit })
+      const input =
+        fetchMode === 'offset'
+          ? { topic, limit, mode: 'offset' as const, partition, offset: messageOffset.trim() }
+          : { topic, limit, mode: fetchMode }
+      const result = await api.fetchKafkaMessages(connectionId, input)
       if (request !== messageRequest.current) return
       setMessages(result.messages)
       setTotalMessages(result.total)
@@ -916,54 +929,117 @@ export function KafkaWorkspace({ onClose }: { onClose: () => void }) {
 
             <section className="kafka-messages">
               <div className="kafka-message-tools">
-                <input
-                  className="input"
-                  placeholder="Search loaded messages or search the whole topic…"
-                  value={search}
-                  onChange={(event) => {
-                    cancelSearch()
-                    setSearch(event.target.value)
-                    setSearchResults(null)
-                    setSearchScanned(0)
-                  }}
-                  disabled={!messages.length && !selectedTopic}
-                />
-                <select
-                  className="input kafka-limit"
-                  value={limit}
-                  onChange={(event) => setLimit(Number(event.target.value))}
-                >
-                  {[10, 20, 50, 100].map((count) => <option key={count} value={count}>{count}</option>)}
-                </select>
-                <button
-                  className="btn"
-                  onClick={() => void loadMessages()}
-                  disabled={!selectedTopic || loadingMessages}
-                >
-                  {loadingMessages ? 'Loading…' : 'Load recent'}
-                </button>
-                <button
-                  className="btn btn-primary"
-                  onClick={() => void searchTopic()}
-                  disabled={!selectedTopic || !search.trim() || searching || loadingMessages}
-                >
-                  Search topic
-                </button>
-                {searching && (
-                  <button className="btn" onClick={cancelSearch}>Cancel</button>
-                )}
-                <button className="btn" onClick={() => selectedTopic && void openTopicDetail(selectedTopic)} disabled={!selectedTopic}>
-                  Details
-                </button>
-                <button className="btn btn-primary" onClick={() => setProducing(true)} disabled={!selectedTopic}>
-                  Send event
-                </button>
+                <div className="kafka-tool-group">
+                  <div className="kafka-tool-label">Load messages</div>
+                  <div className="kafka-tool-controls">
+                    <select
+                      className="input kafka-mode"
+                      aria-label="Message loading position"
+                      value={fetchMode}
+                      onChange={(event) => {
+                        const mode = event.target.value
+                        if (mode === 'beginning' || mode === 'end' || mode === 'offset') {
+                          setFetchMode(mode)
+                        }
+                      }}
+                      disabled={!selectedTopic || loadingMessages}
+                    >
+                      <option value="end">From end</option>
+                      <option value="beginning">From beginning</option>
+                      <option value="offset">From offset…</option>
+                    </select>
+                    {fetchMode === 'offset' && (
+                      <>
+                        <select
+                          className="input kafka-partition"
+                          aria-label="Partition for offset"
+                          value={offsetPartition}
+                          onChange={(event) => setOffsetPartition(Number(event.target.value))}
+                          disabled={!selectedTopic || loadingMessages}
+                        >
+                          {Array.from(
+                            { length: topics.find((item) => item.name === selectedTopic)?.partitions ?? 0 },
+                            (_, partition) => (
+                              <option key={partition} value={partition}>Partition {partition}</option>
+                            ),
+                          )}
+                        </select>
+                        <input
+                          className="input kafka-offset"
+                          aria-label="Start offset"
+                          inputMode="numeric"
+                          placeholder="Offset"
+                          value={messageOffset}
+                          onChange={(event) => setMessageOffset(event.target.value)}
+                          disabled={!selectedTopic || loadingMessages}
+                        />
+                        <span className="muted kafka-offset-hint">Offsets are per partition</span>
+                      </>
+                    )}
+                    <select
+                      className="input kafka-limit"
+                      aria-label="Maximum messages to load"
+                      value={limit}
+                      onChange={(event) => setLimit(Number(event.target.value))}
+                      disabled={!selectedTopic || loadingMessages}
+                    >
+                      {[10, 20, 50, 100].map((count) => <option key={count} value={count}>{count} messages</option>)}
+                    </select>
+                    <button
+                      className="btn btn-primary"
+                      onClick={() => void loadMessages()}
+                      disabled={!selectedTopic || loadingMessages}
+                    >
+                      {loadingMessages ? 'Loading…' : 'Load'}
+                    </button>
+                  </div>
+                </div>
+                <div className="kafka-tool-group">
+                  <div className="kafka-tool-label">Search</div>
+                  <div className="kafka-tool-controls">
+                    <input
+                      className="input kafka-search-input"
+                      placeholder="Filter loaded messages or search topic history…"
+                      value={search}
+                      onChange={(event) => {
+                        cancelSearch()
+                        setSearch(event.target.value)
+                        setSearchResults(null)
+                        setSearchScanned(0)
+                      }}
+                      disabled={!selectedTopic}
+                    />
+                    <button
+                      className="btn"
+                      onClick={() => void searchTopic()}
+                      disabled={!selectedTopic || !search.trim() || searching || loadingMessages}
+                    >
+                      Search history
+                    </button>
+                    {searching && <button className="btn" onClick={cancelSearch}>Cancel</button>}
+                  </div>
+                </div>
+                <div className="kafka-tool-group">
+                  <div className="kafka-tool-label">Topic actions</div>
+                  <div className="kafka-tool-controls">
+                    <button
+                      className="btn"
+                      onClick={() => selectedTopic && void openTopicDetail(selectedTopic)}
+                      disabled={!selectedTopic}
+                    >
+                      Details
+                    </button>
+                    <button className="btn" onClick={() => setProducing(true)} disabled={!selectedTopic}>
+                      Send event
+                    </button>
+                  </div>
+                </div>
               </div>
               <div className="kafka-section-heading">
                 <h2>{selectedTopic || 'Select a topic'}</h2>
                 <span className="muted">
                   {searchResults === null
-                    ? `${visibleMessages.length} / ${totalMessages.toLocaleString()} messages`
+                    ? `${visibleMessages.length} shown · ${totalMessages.toLocaleString()} available`
                     : `${visibleMessages.length} search results`}
                 </span>
               </div>
@@ -995,7 +1071,7 @@ export function KafkaWorkspace({ onClose }: { onClose: () => void }) {
                   </details>
                 ))}
                 {selectedTopic && !loadingMessages && searchResults === null && messages.length === 0 && (
-                  <div className="muted kafka-empty-messages">No recent messages in this topic</div>
+                  <div className="muted kafka-empty-messages">No messages found at this position</div>
                 )}
                 {searchResults !== null && !searching && visibleMessages.length === 0 && (
                   <div className="muted kafka-empty-messages">No messages match this search</div>
