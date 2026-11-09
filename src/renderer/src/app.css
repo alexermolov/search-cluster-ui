@@ -874,6 +874,12 @@ body {
   white-space: nowrap;
 }
 
+.redis-console-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
 .redis-command-history {
   display: flex;
   flex-direction: column;
