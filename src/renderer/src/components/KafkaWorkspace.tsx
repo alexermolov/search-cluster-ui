@@ -915,14 +915,6 @@ export function KafkaWorkspace({ onClose }: { onClose: () => void }) {
             </section>
 
             <section className="kafka-messages">
-              <div className="kafka-section-heading">
-                <h2>{selectedTopic || 'Select a topic'}</h2>
-                <span className="muted">
-                  {searchResults === null
-                    ? `${visibleMessages.length} / ${totalMessages.toLocaleString()} messages`
-                    : `${visibleMessages.length} search results`}
-                </span>
-              </div>
               <div className="kafka-message-tools">
                 <input
                   className="input"
@@ -966,6 +958,14 @@ export function KafkaWorkspace({ onClose }: { onClose: () => void }) {
                 <button className="btn btn-primary" onClick={() => setProducing(true)} disabled={!selectedTopic}>
                   Send event
                 </button>
+              </div>
+              <div className="kafka-section-heading">
+                <h2>{selectedTopic || 'Select a topic'}</h2>
+                <span className="muted">
+                  {searchResults === null
+                    ? `${visibleMessages.length} / ${totalMessages.toLocaleString()} messages`
+                    : `${visibleMessages.length} search results`}
+                </span>
               </div>
               {searchResults !== null && (
                 <div className="muted kafka-search-status">

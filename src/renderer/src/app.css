@@ -498,7 +498,7 @@ body {
 }
 
 .kafka-limit {
-  width: 60px;
+  max-width: 120px;
 }
 
 .kafka-search-status {
