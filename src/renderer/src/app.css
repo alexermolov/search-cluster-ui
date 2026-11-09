@@ -543,12 +543,37 @@ body {
   font: 12px/1.5 var(--mono);
 }
 
-.kafka-json-view .cm-editor {
-  min-height: 90px;
+.kafka-json-view {
+  position: relative;
 }
 
-.kafka-json-view .cm-editor-wrap {
-  border-color: var(--border-soft);
+.kafka-json-view pre {
+  padding-right: 56px;
+}
+
+.json-copy-btn {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  background: var(--panel-hover);
+  color: var(--fg);
+  border: 1px solid var(--border);
+  padding: 2px 8px;
+  border-radius: var(--radius);
+  font-size: 11px;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+
+.json-copy-btn:hover {
+  background: var(--accent);
+  color: #fff;
+  border-color: var(--accent);
+}
+
+.kafka-json-view:hover .json-copy-btn {
+  opacity: 1;
 }
 
 .kafka-message-body details {

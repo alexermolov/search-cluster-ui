@@ -421,14 +421,24 @@ function KafkaProduceDialog({
 }
 
 function KafkaJsonViewer({ value }: { value: string }) {
-  try {
-    JSON.parse(value)
-  } catch {
-    return <pre>{value}</pre>
+  const [copied, setCopied] = useState(false)
+
+  async function copy(): Promise<void> {
+    try {
+      await navigator.clipboard.writeText(value)
+      setCopied(true)
+      setTimeout(() => setCopied(false), 1500)
+    } catch {
+      // ignore
+    }
   }
+
   return (
     <div className="kafka-json-view">
       <pre><JsonView value={value} /></pre>
+      <button className="json-copy-btn" onClick={() => void copy()} title="Copy JSON to clipboard">
+        {copied ? 'Copied!' : 'Copy'}
+      </button>
     </div>
   )
 }
