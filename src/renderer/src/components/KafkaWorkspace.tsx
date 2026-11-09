@@ -16,6 +16,7 @@ import type {
 } from '../../../shared/ipc'
 import { api, errorMessage } from '../api'
 import { JsonEditor } from './JsonEditor'
+import { JsonView } from './JsonView'
 
 const EMPTY_TLS: KafkaTlsConfig = {
   enabled: false,
@@ -427,7 +428,7 @@ function KafkaJsonViewer({ value }: { value: string }) {
   }
   return (
     <div className="kafka-json-view">
-      <JsonEditor value={value} onChange={() => undefined} readOnly minHeight="90px" />
+      <pre><JsonView value={value} /></pre>
     </div>
   )
 }
