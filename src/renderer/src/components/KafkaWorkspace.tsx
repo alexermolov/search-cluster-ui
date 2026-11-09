@@ -567,6 +567,7 @@ export function KafkaWorkspace({ onClose }: { onClose: () => void }) {
   const [topicFilter, setTopicFilter] = useState('')
   const [selectedTopic, setSelectedTopic] = useState('')
   const [messages, setMessages] = useState<KafkaMessage[]>([])
+  const [totalMessages, setTotalMessages] = useState(0)
   const [search, setSearch] = useState('')
   const [searchResults, setSearchResults] = useState<KafkaMessage[] | null>(null)
   const [searchScanned, setSearchScanned] = useState(0)
@@ -614,6 +615,7 @@ export function KafkaWorkspace({ onClose }: { onClose: () => void }) {
     setTopics([])
     setSelectedTopic('')
     setMessages([])
+    setTotalMessages(0)
     setSearchResults(null)
     setLoadingMessages(false)
     try {
@@ -662,6 +664,7 @@ export function KafkaWorkspace({ onClose }: { onClose: () => void }) {
           setTopics([])
           setSelectedTopic('')
           setMessages([])
+          setTotalMessages(0)
           setSearchResults(null)
           setLoadingTopics(false)
           setLoadingMessages(false)
@@ -684,11 +687,13 @@ export function KafkaWorkspace({ onClose }: { onClose: () => void }) {
     try {
       const result = await api.fetchKafkaMessages(connectionId, { topic, limit })
       if (request !== messageRequest.current) return
-      setMessages(result)
+      setMessages(result.messages)
+      setTotalMessages(result.total)
     } catch (reason) {
       if (request !== messageRequest.current) return
       setError(errorMessage(reason))
       setMessages([])
+      setTotalMessages(0)
     } finally {
       if (request === messageRequest.current) setLoadingMessages(false)
     }
@@ -772,6 +777,7 @@ export function KafkaWorkspace({ onClose }: { onClose: () => void }) {
       if (selectedTopic === topic) {
         setSelectedTopic('')
         setMessages([])
+        setTotalMessages(0)
       }
       await reloadTopics(active.id)
     } catch (reason) {
@@ -913,7 +919,7 @@ export function KafkaWorkspace({ onClose }: { onClose: () => void }) {
                 <h2>{selectedTopic || 'Select a topic'}</h2>
                 <span className="muted">
                   {searchResults === null
-                    ? `${visibleMessages.length} / ${messages.length} messages`
+                    ? `${visibleMessages.length} / ${totalMessages.toLocaleString()} messages`
                     : `${visibleMessages.length} search results`}
                 </span>
               </div>

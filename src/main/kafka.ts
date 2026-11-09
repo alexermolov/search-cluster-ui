@@ -12,6 +12,7 @@ import type {
   KafkaConsumerGroupInfo,
   KafkaConsumerGroupMember,
   KafkaMessage,
+  KafkaMessagesResult,
   KafkaSearchProgress,
   KafkaSearchResult,
   KafkaPartitionInfo,
@@ -517,7 +518,7 @@ export async function fetchKafkaMessages(
   config: KafkaConnection,
   { topic, limit }: KafkaMessagesInput,
   signal?: AbortSignal,
-): Promise<KafkaMessage[]> {
+): Promise<KafkaMessagesResult> {
   if (!topic.trim()) throw new Error('A Kafka topic is required')
   if (!Number.isInteger(limit) || limit < 1 || limit > 100)
     throw new Error('Message limit must be between 1 and 100')
@@ -533,6 +534,7 @@ export async function fetchKafkaMessages(
     const offsets = await admin.fetchTopicOffsets(topic)
     if (!offsets.length) throw new Error(`Topic "${topic}" has no partitions`)
 
+    const total = offsets.reduce((sum, item) => sum + (BigInt(item.high) - BigInt(item.low)), 0n)
     const perPartitionLimit = Math.ceil(limit / offsets.length)
     const endOffsets = new Map(offsets.map((item) => [item.partition, BigInt(item.high)]))
     const starts = new Map(
@@ -629,7 +631,7 @@ export async function fetchKafkaMessages(
       signal?.removeEventListener('abort', onAbort)
     }
 
-    return messages.sort(compareKafkaMessages)
+    return { messages: messages.sort(compareKafkaMessages), total: Number(total) }
   } finally {
     try {
       if (consumer) {

@@ -18,7 +18,7 @@ import type {
   StoredConnection,
   BulkResult,
   MsearchResults,
-  KafkaMessage,
+  KafkaMessagesResult,
   KafkaSearchProgress,
   KafkaSearchResult,
   KafkaTopicInfo,
@@ -375,7 +375,7 @@ export interface ElectronApi {
   deleteKafkaTopic(connectionId: string, topic: string): Promise<void>
   fetchKafkaTopicPartitions(connectionId: string, topic: string): Promise<KafkaPartitionInfo[]>
   fetchKafkaConsumerGroups(connectionId: string, topic?: string): Promise<KafkaConsumerGroupInfo[]>
-  fetchKafkaMessages(connectionId: string, input: KafkaMessagesInput, requestId?: string): Promise<KafkaMessage[]>
+  fetchKafkaMessages(connectionId: string, input: KafkaMessagesInput, requestId?: string): Promise<KafkaMessagesResult>
   searchKafkaMessages(
     connectionId: string,
     input: KafkaSearchInput,
