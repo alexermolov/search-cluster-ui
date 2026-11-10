@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import type { ClusterSettings } from '../../../shared/types'
 import { api, errorMessage } from '../api'
 import { useApp } from '../store'
+import { addToast } from '../toasts'
 import { JsonEditor } from './JsonEditor'
 
 /**
@@ -17,7 +18,6 @@ export function ClusterSettingsPanel() {
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
-  const [saved, setSaved] = useState(false)
   const [reloadTick, setReloadTick] = useState(0)
 
   useEffect(() => {
@@ -71,7 +71,6 @@ export function ClusterSettingsPanel() {
 
     setSaving(true)
     setError(null)
-    setSaved(false)
     try {
       const r = await api.updateClusterSettings(activeId, {
         persistent: p,
@@ -80,8 +79,7 @@ export function ClusterSettingsPanel() {
       setSettings(r)
       setPersistent(JSON.stringify(r.persistent, null, 2))
       setTransient(JSON.stringify(r.transient, null, 2))
-      setSaved(true)
-      window.setTimeout(() => setSaved(false), 2500)
+      addToast('Settings updated', 'success')
     } catch (e) {
       setError(errorMessage(e))
     } finally {
@@ -100,7 +98,6 @@ export function ClusterSettingsPanel() {
       </div>
 
       {error && <div className="banner banner-error">{error}</div>}
-      {saved && <div className="banner banner-ok">Settings updated</div>}
 
       {loading && !settings && !error && <div className="loading">Loading settings…</div>}
 

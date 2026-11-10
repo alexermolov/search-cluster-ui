@@ -9,6 +9,7 @@ import type {
 import type { RedisConnectionInput, RedisKeySaveInput } from '../../../shared/types'
 import { api, errorMessage } from '../api'
 import { CommandPalettePanel, useRedisPaletteCommands } from './CommandPalette'
+import { addToast } from '../toasts'
 
 const REDIS_MAX_LOADED_KEYS = 5000
 const REDIS_KEY_ROW_HEIGHT = 56
@@ -145,17 +146,15 @@ function RedisConnectionForm({ connection, onClose, onSave }: ConnectionFormProp
   )
   const [testing, setTesting] = useState(false)
   const [saving, setSaving] = useState(false)
-  const [testResult, setTestResult] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
 
   async function test(): Promise<void> {
     setTesting(true)
-    setTestResult(null)
     try {
       const info = await api.testRedisConnection(draft)
-      setTestResult(`Connected · Redis ${info.version} · ${info.mode}${info.role ? ` · ${info.role}` : ''}`)
+      addToast(`Connected · Redis ${info.version} · ${info.mode}${info.role ? ` · ${info.role}` : ''}`, 'success')
     } catch (reason) {
-      setTestResult(`Failed: ${errorMessage(reason)}`)
+      addToast(`Failed: ${errorMessage(reason)}`, 'error')
     } finally {
       setTesting(false)
     }
@@ -401,11 +400,7 @@ function RedisConnectionForm({ connection, onClose, onSave }: ConnectionFormProp
           </>
         )}
 
-        {testResult && (
-          <div className={`banner ${testResult.startsWith('Connected') ? 'banner-ok' : 'banner-error'}`}>
-            {testResult}
-          </div>
-        )}
+
         {error && <div className="banner banner-error">{error}</div>}
         <div className="modal-footer">
           <button className="btn" onClick={() => void test()} disabled={testing}>

@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { api, errorMessage } from '../api'
+import { addToast } from '../toasts'
 import { JsonEditor } from './JsonEditor'
 import { JsonView } from './JsonView'
 
@@ -30,7 +31,6 @@ export function CreateIndexFromTemplateDialog({ connectionId, templateName, onCl
   const [running, setRunning] = useState(false)
   const [previewing, setPreviewing] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [created, setCreated] = useState(false)
 
   function parseOverrides(): Record<string, unknown> | null | 'invalid' {
     const text = overrides.trim()
@@ -83,7 +83,7 @@ export function CreateIndexFromTemplateDialog({ connectionId, templateName, onCl
     setError(null)
     try {
       await api.createIndexFromTemplate(connectionId, name, parsed)
-      setCreated(true)
+      addToast('Index created', 'success')
       onCreated()
       window.setTimeout(onClose, 600)
     } catch (e) {
@@ -124,7 +124,6 @@ export function CreateIndexFromTemplateDialog({ connectionId, templateName, onCl
         </div>
 
         {error && <div className="banner banner-error">{error}</div>}
-        {created && <div className="banner banner-ok">Index created</div>}
 
         {preview && (
           <div className="create-index-preview">
@@ -138,7 +137,7 @@ export function CreateIndexFromTemplateDialog({ connectionId, templateName, onCl
         <div className="modal-footer">
           <span className="spacer" />
           <button className="btn" onClick={onClose} disabled={running}>
-            {created ? 'Close' : 'Cancel'}
+            Cancel
           </button>
           <button className="btn" onClick={() => void runPreview()} disabled={previewing || running}>
             {previewing ? 'Previewing…' : 'Preview'}

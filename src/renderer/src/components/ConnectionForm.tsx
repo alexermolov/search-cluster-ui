@@ -6,6 +6,7 @@ import type {
   StoredConnection,
 } from '../../../shared/types'
 import { api, errorMessage } from '../api'
+import { addToast } from '../toasts'
 import { useApp } from '../store'
 
 interface Props {
@@ -53,7 +54,6 @@ export function ConnectionForm({ connection }: Props) {
   const save = useApp((s) => s.saveConnection)
 
   const [draft, setDraft] = useState<SaveConnectionInput>(() => toDraft(connection))
-  const [testResult, setTestResult] = useState<string | null>(null)
   const [testing, setTesting] = useState(false)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -66,12 +66,11 @@ export function ConnectionForm({ connection }: Props) {
 
   async function test(): Promise<void> {
     setTesting(true)
-    setTestResult(null)
     try {
       const info = await api.testConnection(draft)
-      setTestResult(`OK — ${info.distribution} ${info.version} (${info.clusterName})`)
+      addToast(`OK — ${info.distribution} ${info.version} (${info.clusterName})`, 'success')
     } catch (e) {
-      setTestResult(`Failed: ${errorMessage(e)}`)
+      addToast(`Failed: ${errorMessage(e)}`, 'error')
     } finally {
       setTesting(false)
     }
@@ -266,11 +265,7 @@ export function ConnectionForm({ connection }: Props) {
           </label>
         </div>
 
-        {testResult && (
-          <div className={`banner ${testResult.startsWith('OK') ? 'banner-ok' : 'banner-error'}`}>
-            {testResult}
-          </div>
-        )}
+
         {error && <div className="banner banner-error">{error}</div>}
 
         <div className="modal-footer">

@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { api, errorMessage } from '../api'
+import { addToast } from '../toasts'
 import { JsonEditor } from './JsonEditor'
 
 interface Props {
@@ -72,7 +73,10 @@ export function DocumentDialog({
         ? await api.createDocument(connectionId, indexName, source)
         : await api.saveDocument(connectionId, indexName, docId as string, source)
       const newId = creating && typeof res._id === 'string' ? res._id : null
-      if (newId) setSavedId(newId)
+      if (newId) {
+        setSavedId(newId)
+        addToast(`Created document ${newId}`, 'success')
+      }
       onSaved()
       if (!newId) onClose()
     } catch (e) {
@@ -104,11 +108,7 @@ export function DocumentDialog({
 
         {error && <div className="banner banner-error">{error}</div>}
 
-        {savedId && (
-          <div className="banner banner-ok">
-            Created document <span className="mono">{savedId}</span>
-          </div>
-        )}
+
 
         <div className="modal-footer">
           <span className="muted">Ctrl+Enter to save</span>

@@ -4,6 +4,7 @@ import { ConnectionForm } from './components/ConnectionForm'
 import { KafkaWorkspace } from './components/KafkaWorkspace'
 import { RedisWorkspace } from './components/RedisWorkspace'
 import { Sidebar } from './components/Sidebar'
+import { ToastContainer } from './components/ToastContainer'
 import { Workspace } from './components/Workspace'
 import { useApp } from './store'
 
@@ -18,6 +19,7 @@ export function App() {
 
   if (mode === 'picker') {
     return (
+      <>
       <main className="product-picker">
         <div className="product-picker-content">
           <div className="product-picker-brand">
@@ -64,11 +66,23 @@ export function App() {
           <div className="product-picker-hint">Ctrl+K — Command palette</div>
         </div>
       </main>
+      <ToastContainer />
+      </>
     )
   }
 
-  if (mode === 'kafka') return <KafkaWorkspace onClose={() => setMode('picker')} />
-  if (mode === 'redis') return <RedisWorkspace onClose={() => setMode('picker')} />
+  if (mode === 'kafka') return (
+    <>
+      <KafkaWorkspace onClose={() => setMode('picker')} />
+      <ToastContainer />
+    </>
+  )
+  if (mode === 'redis') return (
+    <>
+      <RedisWorkspace onClose={() => setMode('picker')} />
+      <ToastContainer />
+    </>
+  )
 
   return (
     <div className="app">
@@ -78,6 +92,7 @@ export function App() {
         <ConnectionForm key={editor.connection?.id ?? 'new'} connection={editor.connection} />
       )}
       <CommandPalette />
+      <ToastContainer />
     </div>
   )
 }

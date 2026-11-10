@@ -18,6 +18,7 @@ import { api, errorMessage } from '../api'
 import { JsonEditor } from './JsonEditor'
 import { JsonView } from './JsonView'
 import { CommandPalettePanel, useKafkaPaletteCommands } from './CommandPalette'
+import { addToast } from '../toasts'
 
 const EMPTY_TLS: KafkaTlsConfig = {
   enabled: false,
@@ -72,7 +73,6 @@ function KafkaConnectionForm({ connection, onClose, onSave }: KafkaConnectionFor
   )
   const [testing, setTesting] = useState(false)
   const [saving, setSaving] = useState(false)
-  const [testResult, setTestResult] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
 
   const patchTls = (value: Partial<KafkaTlsConfig>) =>
@@ -80,12 +80,11 @@ function KafkaConnectionForm({ connection, onClose, onSave }: KafkaConnectionFor
 
   async function test(): Promise<void> {
     setTesting(true)
-    setTestResult(null)
     try {
       const result = await api.testKafkaConnection(draft)
-      setTestResult(`Connected to ${result.brokers} broker(s) · cluster ${result.clusterId || 'unknown'}`)
+      addToast(`Connected to ${result.brokers} broker(s) · cluster ${result.clusterId || 'unknown'}`, 'success')
     } catch (reason) {
-      setTestResult(`Failed: ${errorMessage(reason)}`)
+      addToast(`Failed: ${errorMessage(reason)}`, 'error')
     } finally {
       setTesting(false)
     }
@@ -264,11 +263,7 @@ function KafkaConnectionForm({ connection, onClose, onSave }: KafkaConnectionFor
           </>
         )}
 
-        {testResult && (
-          <div className={`banner ${testResult.startsWith('Connected') ? 'banner-ok' : 'banner-error'}`}>
-            {testResult}
-          </div>
-        )}
+
         {error && <div className="banner banner-error">{error}</div>}
         <div className="modal-footer">
           <button className="btn" onClick={() => void test()} disabled={testing}>
@@ -585,7 +580,6 @@ export function KafkaWorkspace({ onClose }: { onClose: () => void }) {
   const [loadingConsumers, setLoadingConsumers] = useState(false)
   const [loadingMessages, setLoadingMessages] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [notice, setNotice] = useState<string | null>(null)
   const [editor, setEditor] = useState<StoredKafkaConnection | null | undefined>(undefined)
   const [creatingTopic, setCreatingTopic] = useState(false)
   const [producing, setProducing] = useState(false)
@@ -851,12 +845,11 @@ export function KafkaWorkspace({ onClose }: { onClose: () => void }) {
   async function createTopic(input: KafkaTopicCreateInput): Promise<boolean> {
     if (!active) return false
     setError(null)
-    setNotice(null)
     const created = await api.createKafkaTopic(active.id, input)
     if (created) {
       await reloadTopics(active.id)
       setSelectedTopic(input.topic)
-      setNotice(`Topic "${input.topic}" created`)
+      addToast(`Topic "${input.topic}" created`, 'success')
     }
     return created
   }
@@ -865,10 +858,9 @@ export function KafkaWorkspace({ onClose }: { onClose: () => void }) {
     if (!active) return
     if (!window.confirm(`Delete topic "${topic}"? This action cannot be undone.`)) return
     setError(null)
-    setNotice(null)
     try {
       await api.deleteKafkaTopic(active.id, topic)
-      setNotice(`Topic "${topic}" deleted`)
+      addToast(`Topic "${topic}" deleted`, 'success')
       if (selectedTopic === topic) {
         setSelectedTopic('')
         setMessages([])
@@ -904,9 +896,8 @@ export function KafkaWorkspace({ onClose }: { onClose: () => void }) {
   async function produceMessage(input: KafkaMessageProduceInput): Promise<void> {
     if (!active) throw new Error('No Kafka connection selected')
     setError(null)
-    setNotice(null)
     await api.produceKafkaMessage(active.id, input)
-    setNotice(`Event sent to "${input.topic}"`)
+    addToast(`Event sent to "${input.topic}"`, 'success')
   }
 
   const paletteCommands = useKafkaPaletteCommands({
@@ -934,14 +925,14 @@ export function KafkaWorkspace({ onClose }: { onClose: () => void }) {
     }, [selectedTopic, openTopicDetail]),
     onCopyAllTopics: useCallback(() => {
       void navigator.clipboard.writeText(topics.map((t) => t.name).join('\n'))
-        .then(() => setNotice('Copied all topic names to clipboard'))
-        .catch(() => setNotice('Failed to copy topic names'))
-    }, [topics, setNotice]),
+        .then(() => addToast('Copied all topic names to clipboard', 'success'))
+        .catch(() => addToast('Failed to copy topic names', 'error'))
+    }, [topics]),
     onCopyVisibleTopics: useCallback(() => {
       void navigator.clipboard.writeText(visibleTopics.map((t) => t.name).join('\n'))
-        .then(() => setNotice('Copied visible topic names to clipboard'))
-        .catch(() => setNotice('Failed to copy topic names'))
-    }, [visibleTopics, setNotice]),
+        .then(() => addToast('Copied visible topic names to clipboard', 'success'))
+        .catch(() => addToast('Failed to copy topic names', 'error'))
+    }, [visibleTopics]),
     onBackToPicker: onClose,
   })
 
@@ -1005,7 +996,6 @@ export function KafkaWorkspace({ onClose }: { onClose: () => void }) {
         </header>
 
         {error && <div className="banner banner-error kafka-error">{error}</div>}
-        {notice && <div className="banner banner-ok kafka-notice">{notice}</div>}
 
         {!active ? (
           <div className="empty-state kafka-empty">

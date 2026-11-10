@@ -3,6 +3,7 @@ import type { ReactNode } from 'react'
 import type { SearchHit, SearchResults, MsearchResults } from '../../../shared/types'
 import { collectColumns } from '../../../shared/csv'
 import { api, errorMessage } from '../api'
+import { addToast } from '../toasts'
 import {
   clearHistory,
   loadHistory,
@@ -146,7 +147,6 @@ export function QueryTabView({ tabId, onTitle }: Props) {
   const [explainDoc, setExplainDoc] = useState<{ index: string; docId: string } | null>(null)
   const [exportOpen, setExportOpen] = useState(false)
   const [exporting, setExporting] = useState(false)
-  const [exportInfo, setExportInfo] = useState<string | null>(null)
   const [indexDropdownOpen, setIndexDropdownOpen] = useState(false)
 
   const toolbarRef = useRef<HTMLDivElement | null>(null)
@@ -693,7 +693,6 @@ function renderCell(hit: SearchHit, column: string): ReactNode {
       />
 
       {error && <div className="banner banner-error">{error}</div>}
-      {exportInfo && <div className="banner banner-ok">{exportInfo}</div>}
 
       {result && (
         <div className="query-result">
@@ -956,11 +955,10 @@ function renderCell(hit: SearchHit, column: string): ReactNode {
           onClose={() => setExportOpen(false)}
           onStart={() => {
             setExporting(true)
-            setExportInfo(null)
           }}
           onExported={(path) => {
             setExporting(false)
-            if (path) setExportInfo(`Exported to ${path}`)
+            if (path) addToast(`Exported to ${path}`, 'success')
           }}
           onError={(msg) => {
             setExporting(false)
