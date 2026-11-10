@@ -1064,7 +1064,16 @@ export function RedisWorkspace({ onClose }: { onClose: () => void }) {
               <section className="redis-console">
                 <div className="redis-section-heading">
                   <h2>Redis command console</h2>
-                  <span className="muted">Commands run on the selected connection</span>
+                  <div className="redis-console-header-actions">
+                    <button
+                      className="btn"
+                      onClick={() => setCommandOutput([])}
+                      disabled={commandOutput.length === 0}
+                    >
+                      Clear output
+                    </button>
+                    <span className="muted">Commands run on the selected connection</span>
+                  </div>
                 </div>
                 <form
                   className="redis-command-form"

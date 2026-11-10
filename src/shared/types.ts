@@ -46,6 +46,11 @@ export interface KafkaMessage {
   headers: Record<string, string | null>
 }
 
+export interface KafkaMessagesResult {
+  messages: KafkaMessage[]
+  total: number
+}
+
 export interface KafkaSearchProgress {
   messages: KafkaMessage[]
   scanned: number

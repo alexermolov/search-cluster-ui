@@ -16,6 +16,7 @@ import type {
 } from '../../../shared/ipc'
 import { api, errorMessage } from '../api'
 import { JsonEditor } from './JsonEditor'
+import { JsonView } from './JsonView'
 
 const EMPTY_TLS: KafkaTlsConfig = {
   enabled: false,
@@ -420,14 +421,24 @@ function KafkaProduceDialog({
 }
 
 function KafkaJsonViewer({ value }: { value: string }) {
-  try {
-    JSON.parse(value)
-  } catch {
-    return <pre>{value}</pre>
+  const [copied, setCopied] = useState(false)
+
+  async function copy(): Promise<void> {
+    try {
+      await navigator.clipboard.writeText(value)
+      setCopied(true)
+      setTimeout(() => setCopied(false), 1500)
+    } catch {
+      // ignore
+    }
   }
+
   return (
     <div className="kafka-json-view">
-      <JsonEditor value={value} onChange={() => undefined} readOnly minHeight="90px" />
+      <pre><JsonView value={value} /></pre>
+      <button className="json-copy-btn" onClick={() => void copy()} title="Copy JSON to clipboard">
+        {copied ? 'Copied!' : 'Copy'}
+      </button>
     </div>
   )
 }
@@ -552,17 +563,25 @@ function KafkaTopicDetailDialog({
 export function KafkaWorkspace({ onClose }: { onClose: () => void }) {
   const [connections, setConnections] = useState<StoredKafkaConnection[]>([])
   const [activeId, setActiveId] = useState<string | null>(null)
+  const [viewMode, setViewMode] = useState<'topics' | 'consumers'>('topics')
   const [topics, setTopics] = useState<KafkaTopicInfo[]>([])
   const [topicFilter, setTopicFilter] = useState('')
+  const [consumerFilter, setConsumerFilter] = useState('')
+  const [selectedConsumerGroupId, setSelectedConsumerGroupId] = useState('')
   const [selectedTopic, setSelectedTopic] = useState('')
   const [messages, setMessages] = useState<KafkaMessage[]>([])
+  const [totalMessages, setTotalMessages] = useState(0)
   const [search, setSearch] = useState('')
   const [searchResults, setSearchResults] = useState<KafkaMessage[] | null>(null)
   const [searchScanned, setSearchScanned] = useState(0)
   const [searching, setSearching] = useState(false)
   const [searchCancelled, setSearchCancelled] = useState(false)
   const [limit, setLimit] = useState(20)
+  const [fetchMode, setFetchMode] = useState<'beginning' | 'end' | 'offset'>('end')
+  const [offsetPartition, setOffsetPartition] = useState(0)
+  const [messageOffset, setMessageOffset] = useState('0')
   const [loadingTopics, setLoadingTopics] = useState(false)
+  const [loadingConsumers, setLoadingConsumers] = useState(false)
   const [loadingMessages, setLoadingMessages] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
@@ -574,6 +593,7 @@ export function KafkaWorkspace({ onClose }: { onClose: () => void }) {
   const [consumerGroups, setConsumerGroups] = useState<KafkaConsumerGroupInfo[]>([])
   const [loadingDetail, setLoadingDetail] = useState(false)
   const topicRequest = useRef(0)
+  const consumerRequest = useRef(0)
   const messageRequest = useRef(0)
   const searchRequest = useRef(0)
   const activeSearchId = useRef<string | null>(null)
@@ -593,6 +613,30 @@ export function KafkaWorkspace({ onClose }: { onClose: () => void }) {
     const needle = topicFilter.trim().toLocaleLowerCase()
     return needle ? topics.filter((item) => item.name.toLocaleLowerCase().includes(needle)) : topics
   }, [topics, topicFilter])
+  const visibleConsumerGroups = useMemo(() => {
+    const needle = consumerFilter.trim().toLocaleLowerCase()
+    return consumerGroups.filter((group) => {
+      return [
+        group.groupId,
+        group.state,
+        group.protocol,
+        ...group.members.flatMap((member) => [
+          member.clientId,
+          member.clientHost,
+          member.memberId,
+          ...member.assignments.map((assignment) => assignment.topic),
+        ]),
+      ].some((value) => value.toLocaleLowerCase().includes(needle))
+    })
+  }, [consumerGroups, consumerFilter])
+  const selectedConsumerGroup = consumerGroups.find(
+    (group) => group.groupId === selectedConsumerGroupId,
+  ) ?? null
+  const selectedConsumerTopics = selectedConsumerGroup
+    ? [...new Set(selectedConsumerGroup.members.flatMap((member) =>
+        member.assignments.map((assignment) => assignment.topic),
+      ))].sort((a, b) => a.localeCompare(b))
+    : []
 
   async function reloadTopics(connectionId: string): Promise<void> {
     cancelSearch()
@@ -603,6 +647,7 @@ export function KafkaWorkspace({ onClose }: { onClose: () => void }) {
     setTopics([])
     setSelectedTopic('')
     setMessages([])
+    setTotalMessages(0)
     setSearchResults(null)
     setLoadingMessages(false)
     try {
@@ -616,6 +661,33 @@ export function KafkaWorkspace({ onClose }: { onClose: () => void }) {
       if (request === topicRequest.current) setLoadingTopics(false)
     }
   }
+
+  async function reloadConsumerGroups(connectionId: string): Promise<void> {
+    const request = ++consumerRequest.current
+    setLoadingConsumers(true)
+    setError(null)
+    setConsumerGroups([])
+    setSelectedConsumerGroupId('')
+    try {
+      const result = await api.fetchKafkaConsumerGroups(connectionId, undefined, false)
+      if (request !== consumerRequest.current) return
+      setConsumerGroups(result)
+      setSelectedConsumerGroupId(result[0]?.groupId ?? '')
+    } catch (reason) {
+      if (request !== consumerRequest.current) return
+      setError(errorMessage(reason))
+    } finally {
+      if (request === consumerRequest.current) setLoadingConsumers(false)
+    }
+  }
+
+  useEffect(() => {
+    if (viewMode !== 'consumers' || !activeId) return
+    void reloadConsumerGroups(activeId)
+    return () => {
+      consumerRequest.current += 1
+    }
+  }, [activeId, viewMode])
 
   useEffect(() => {
     void api.listKafkaConnections().then((items) => {
@@ -651,6 +723,7 @@ export function KafkaWorkspace({ onClose }: { onClose: () => void }) {
           setTopics([])
           setSelectedTopic('')
           setMessages([])
+          setTotalMessages(0)
           setSearchResults(null)
           setLoadingTopics(false)
           setLoadingMessages(false)
@@ -663,25 +736,43 @@ export function KafkaWorkspace({ onClose }: { onClose: () => void }) {
 
   async function loadMessages(topic = selectedTopic): Promise<void> {
     if (!active || !topic) return
+    const partition = topic === selectedTopic ? offsetPartition : 0
+    if (fetchMode === 'offset' && !/^\d+$/.test(messageOffset.trim())) {
+      setError('Offset must be a non-negative integer')
+      return
+    }
     cancelSearch()
     const request = ++messageRequest.current
     const connectionId = active.id
     setSelectedTopic(topic)
+    if (topic !== selectedTopic) setOffsetPartition(0)
     setSearchResults(null)
     setMessages([])
     setLoadingMessages(true)
     setError(null)
     try {
-      const result = await api.fetchKafkaMessages(connectionId, { topic, limit })
+      const input =
+        fetchMode === 'offset'
+          ? { topic, limit, mode: 'offset' as const, partition, offset: messageOffset.trim() }
+          : { topic, limit, mode: fetchMode }
+      const result = await api.fetchKafkaMessages(connectionId, input)
       if (request !== messageRequest.current) return
-      setMessages(result)
+      setMessages(result.messages)
+      setTotalMessages(result.total)
     } catch (reason) {
       if (request !== messageRequest.current) return
       setError(errorMessage(reason))
       setMessages([])
+      setTotalMessages(0)
     } finally {
       if (request === messageRequest.current) setLoadingMessages(false)
     }
+  }
+
+  function openSubscribedTopic(topic: string): void {
+    setViewMode('topics')
+    setTopicFilter('')
+    void loadMessages(topic)
   }
 
   function cancelSearch(): void {
@@ -762,6 +853,7 @@ export function KafkaWorkspace({ onClose }: { onClose: () => void }) {
       if (selectedTopic === topic) {
         setSelectedTopic('')
         setMessages([])
+        setTotalMessages(0)
       }
       await reloadTopics(active.id)
     } catch (reason) {
@@ -842,8 +934,16 @@ export function KafkaWorkspace({ onClose }: { onClose: () => void }) {
           </div>
           {active && (
             <div className="ws-actions">
-              <button className="btn" onClick={() => void reloadTopics(active.id)} disabled={loadingTopics}>
-                {loadingTopics ? 'Loading…' : 'Refresh topics'}
+              <button
+                className="btn"
+                onClick={() => viewMode === 'topics'
+                  ? void reloadTopics(active.id)
+                  : void reloadConsumerGroups(active.id)}
+                disabled={viewMode === 'topics' ? loadingTopics : loadingConsumers}
+              >
+                {viewMode === 'topics'
+                  ? loadingTopics ? 'Loading…' : 'Refresh topics'
+                  : loadingConsumers ? 'Loading…' : 'Refresh consumers'}
               </button>
             </div>
           )}
@@ -859,99 +959,308 @@ export function KafkaWorkspace({ onClose }: { onClose: () => void }) {
             <button className="btn btn-primary" onClick={() => setEditor(null)}>+ Add Kafka connection</button>
           </div>
         ) : (
-          <div className="kafka-content">
+          <div className={`kafka-content${viewMode === 'consumers' ? ' kafka-consumers-mode' : ''}`}>
             <section className="kafka-topics">
               <div className="kafka-section-heading">
-                <h2>Topics</h2>
+                <h2>{viewMode === 'topics' ? 'Topics' : 'Consumers'}</h2>
                 <div className="kafka-topic-actions">
-                  <span className="muted">{topics.length}</span>
-                  <button className="btn" onClick={() => setCreatingTopic(true)}>+ Create</button>
+                  <span className="muted">
+                    {viewMode === 'topics'
+                      ? topics.length
+                      : `${consumerGroups.reduce((count, group) => count + group.members.length, 0)} consumers · ${consumerGroups.length} groups`}
+                  </span>
+                  {viewMode === 'topics' && (
+                    <button className="btn" onClick={() => setCreatingTopic(true)}>+ Create</button>
+                  )}
                 </div>
+              </div>
+              <div className="kafka-detail-tabs kafka-browser-tabs" role="tablist" aria-label="Kafka browser mode">
+                <button
+                  className={`kafka-detail-tab${viewMode === 'topics' ? ' active' : ''}`}
+                  role="tab"
+                  aria-selected={viewMode === 'topics'}
+                  onClick={() => setViewMode('topics')}
+                >
+                  Topics
+                </button>
+                <button
+                  className={`kafka-detail-tab${viewMode === 'consumers' ? ' active' : ''}`}
+                  role="tab"
+                  aria-selected={viewMode === 'consumers'}
+                  onClick={() => setViewMode('consumers')}
+                >
+                  Consumers
+                </button>
               </div>
               <input
                 className="input"
-                placeholder="Filter topics…"
-                value={topicFilter}
-                onChange={(event) => setTopicFilter(event.target.value)}
+                aria-label={viewMode === 'topics' ? 'Filter topics' : 'Search consumer groups'}
+                placeholder={viewMode === 'topics' ? 'Filter topics…' : 'Search groups, clients, topics…'}
+                value={viewMode === 'topics' ? topicFilter : consumerFilter}
+                onChange={(event) => viewMode === 'topics'
+                  ? setTopicFilter(event.target.value)
+                  : setConsumerFilter(event.target.value)}
               />
-              <div className="kafka-topic-list">
-                {visibleTopics.map((topic) => (
-                  <div
-                    key={topic.name}
-                    className={`kafka-topic-row${selectedTopic === topic.name ? ' active' : ''}`}
-                  >
-                    <span
-                      className="topic-name"
-                      onClick={() => void loadMessages(topic.name)}
-                      title="Load messages"
+              {viewMode === 'topics' ? (
+                <div className="kafka-topic-list">
+                  {visibleTopics.map((topic) => (
+                    <div
+                      key={topic.name}
+                      className={`kafka-topic-row${selectedTopic === topic.name ? ' active' : ''}`}
                     >
-                      {topic.name}
-                    </span>
-                    <span className="topic-meta muted">{topic.partitions}p</span>
-                    <span className="topic-actions">
-                      <button title="Topic details" onClick={() => void openTopicDetail(topic.name)}>ℹ</button>
-                      <button title="Delete topic" onClick={() => void removeTopic(topic.name)}>✕</button>
-                    </span>
-                  </div>
-                ))}
-                {!loadingTopics && topics.length === 0 && <div className="muted kafka-empty-topics">No topics found</div>}
-              </div>
+                      <span
+                        className="topic-name"
+                        onClick={() => void loadMessages(topic.name)}
+                        title="Load messages"
+                      >
+                        {topic.name}
+                      </span>
+                      <span className="topic-meta muted">{topic.partitions}p</span>
+                      <span className="topic-actions">
+                        <button title="Topic details" onClick={() => void openTopicDetail(topic.name)}>ℹ</button>
+                        <button title="Delete topic" onClick={() => void removeTopic(topic.name)}>✕</button>
+                      </span>
+                    </div>
+                  ))}
+                  {!loadingTopics && topics.length === 0 && <div className="muted kafka-empty-topics">No topics found</div>}
+                </div>
+              ) : (
+                <div className="kafka-topic-list kafka-consumer-list">
+                  {visibleConsumerGroups.map((group) => (
+                    <button
+                      className={`kafka-consumer-row${selectedConsumerGroupId === group.groupId ? ' active' : ''}`}
+                      key={group.groupId}
+                      onClick={() => setSelectedConsumerGroupId(group.groupId)}
+                      title={group.groupId}
+                    >
+                      <span className="kafka-consumer-row-name">{group.groupId}</span>
+                      <span className="kafka-consumer-row-meta">
+                        <span className={`group-state state-${group.state.toLowerCase()}`}>{group.state}</span>
+                        <span className="muted">{group.members.length} members</span>
+                      </span>
+                    </button>
+                  ))}
+                  {!loadingConsumers && consumerGroups.length === 0 && (
+                    <div className="muted kafka-empty-topics">No consumer groups found</div>
+                  )}
+                  {!loadingConsumers && consumerGroups.length > 0 && visibleConsumerGroups.length === 0 && (
+                    <div className="muted kafka-empty-topics">No consumers match this search</div>
+                  )}
+                  {loadingConsumers && <div className="muted kafka-empty-topics">Loading consumers…</div>}
+                </div>
+              )}
             </section>
 
+            {viewMode === 'consumers' ? (
+              <section className="kafka-consumer-details">
+                {loadingConsumers ? (
+                  <div className="muted kafka-consumer-placeholder">Loading consumers…</div>
+                ) : !selectedConsumerGroup ? (
+                  <div className="muted kafka-consumer-placeholder">
+                    {consumerGroups.length === 0
+                      ? 'No consumer groups found'
+                      : 'Select a consumer group to view its details'}
+                  </div>
+                ) : (
+                  <>
+                    <div className="kafka-consumer-detail-header">
+                      <div>
+                        <div className="muted kafka-consumer-eyebrow">Consumer group</div>
+                        <h2 title={selectedConsumerGroup.groupId}>{selectedConsumerGroup.groupId}</h2>
+                      </div>
+                      <span className={`group-state state-${selectedConsumerGroup.state.toLowerCase()}`}>
+                        {selectedConsumerGroup.state}
+                      </span>
+                    </div>
+                    <div className="kafka-consumer-summary">
+                      <div>
+                        <span className="muted">Protocol</span>
+                        <strong>{selectedConsumerGroup.protocol || '—'}</strong>
+                      </div>
+                      <div>
+                        <span className="muted">Members</span>
+                        <strong>{selectedConsumerGroup.members.length}</strong>
+                      </div>
+                      <div>
+                        <span className="muted">Topics</span>
+                        <strong>{selectedConsumerTopics.length}</strong>
+                      </div>
+                    </div>
+                    <div className="kafka-consumer-detail-section">
+                      <div className="kafka-section-heading">
+                        <h3>Subscribed topics</h3>
+                        <span className="muted">{selectedConsumerTopics.length}</span>
+                      </div>
+                      {selectedConsumerTopics.length > 0 ? (
+                        <div className="kafka-consumer-topic-list">
+                          {selectedConsumerTopics.map((topic) => (
+                            <button
+                              className="kafka-subscribed-topic"
+                              key={topic}
+                              title={`Open ${topic}`}
+                              onClick={() => openSubscribedTopic(topic)}
+                            >
+                              {topic} <span aria-hidden="true">→</span>
+                            </button>
+                          ))}
+                        </div>
+                      ) : (
+                        <div className="muted kafka-consumer-empty">
+                          No active topic assignments
+                        </div>
+                      )}
+                    </div>
+                    <div className="kafka-consumer-detail-section">
+                      <div className="kafka-section-heading">
+                        <h3>Members</h3>
+                        <span className="muted">{selectedConsumerGroup.members.length}</span>
+                      </div>
+                      {selectedConsumerGroup.members.length > 0 ? (
+                        <div className="kafka-consumer-members">
+                          {selectedConsumerGroup.members.map((member) => (
+                            <div className="kafka-consumer-member" key={member.memberId}>
+                              <div className="kafka-consumer-member-info">
+                                <span className="kafka-browser-member-name" title={member.clientId}>
+                                  {member.clientId || member.memberId}
+                                </span>
+                                <span className="muted kafka-browser-member-host" title={member.clientHost}>
+                                  {member.clientHost}
+                                </span>
+                              </div>
+                              <span className="muted">
+                                {member.assignments.reduce(
+                                  (count, assignment) => count + assignment.partitions.length,
+                                  0,
+                                )} partitions
+                              </span>
+                            </div>
+                          ))}
+                        </div>
+                      ) : (
+                        <div className="muted kafka-consumer-empty">No active members</div>
+                      )}
+                    </div>
+                  </>
+                )}
+              </section>
+            ) : (
             <section className="kafka-messages">
+              <div className="kafka-message-tools">
+                <div className="kafka-tool-group">
+                  <div className="kafka-tool-label">Load messages</div>
+                  <div className="kafka-tool-controls">
+                    <select
+                      className="input kafka-mode"
+                      aria-label="Message loading position"
+                      value={fetchMode}
+                      onChange={(event) => {
+                        const mode = event.target.value
+                        if (mode === 'beginning' || mode === 'end' || mode === 'offset') {
+                          setFetchMode(mode)
+                        }
+                      }}
+                      disabled={!selectedTopic || loadingMessages}
+                    >
+                      <option value="end">From end</option>
+                      <option value="beginning">From beginning</option>
+                      <option value="offset">From offset…</option>
+                    </select>
+                    {fetchMode === 'offset' && (
+                      <>
+                        <select
+                          className="input kafka-partition"
+                          aria-label="Partition for offset"
+                          value={offsetPartition}
+                          onChange={(event) => setOffsetPartition(Number(event.target.value))}
+                          disabled={!selectedTopic || loadingMessages}
+                        >
+                          {Array.from(
+                            { length: topics.find((item) => item.name === selectedTopic)?.partitions ?? 0 },
+                            (_, partition) => (
+                              <option key={partition} value={partition}>Partition {partition}</option>
+                            ),
+                          )}
+                        </select>
+                        <input
+                          className="input kafka-offset"
+                          aria-label="Start offset"
+                          inputMode="numeric"
+                          placeholder="Offset"
+                          value={messageOffset}
+                          onChange={(event) => setMessageOffset(event.target.value)}
+                          disabled={!selectedTopic || loadingMessages}
+                        />
+                        <span className="muted kafka-offset-hint">Offsets are per partition</span>
+                      </>
+                    )}
+                    <select
+                      className="input kafka-limit"
+                      aria-label="Maximum messages to load"
+                      value={limit}
+                      onChange={(event) => setLimit(Number(event.target.value))}
+                      disabled={!selectedTopic || loadingMessages}
+                    >
+                      {[10, 20, 50, 100].map((count) => <option key={count} value={count}>{count} messages</option>)}
+                    </select>
+                    <button
+                      className="btn btn-primary"
+                      onClick={() => void loadMessages()}
+                      disabled={!selectedTopic || loadingMessages}
+                    >
+                      {loadingMessages ? 'Loading…' : 'Load'}
+                    </button>
+                  </div>
+                </div>
+                <div className="kafka-tool-group">
+                  <div className="kafka-tool-label">Search</div>
+                  <div className="kafka-tool-controls">
+                    <input
+                      className="input kafka-search-input"
+                      placeholder="Filter loaded messages or search topic history…"
+                      value={search}
+                      onChange={(event) => {
+                        cancelSearch()
+                        setSearch(event.target.value)
+                        setSearchResults(null)
+                        setSearchScanned(0)
+                      }}
+                      disabled={!selectedTopic}
+                    />
+                    <button
+                      className="btn"
+                      onClick={() => void searchTopic()}
+                      disabled={!selectedTopic || !search.trim() || searching || loadingMessages}
+                    >
+                      Search history
+                    </button>
+                    {searching && <button className="btn" onClick={cancelSearch}>Cancel</button>}
+                  </div>
+                </div>
+                <div className="kafka-tool-group">
+                  <div className="kafka-tool-label">Topic actions</div>
+                  <div className="kafka-tool-controls">
+                    <button
+                      className="btn"
+                      onClick={() => selectedTopic && void openTopicDetail(selectedTopic)}
+                      disabled={!selectedTopic}
+                    >
+                      Details
+                    </button>
+                    <button className="btn" onClick={() => setProducing(true)} disabled={!selectedTopic}>
+                      Send event
+                    </button>
+                  </div>
+                </div>
+              </div>
               <div className="kafka-section-heading">
                 <h2>{selectedTopic || 'Select a topic'}</h2>
                 <span className="muted">
                   {loadingMessages
                     ? 'Loading messages…'
                     : searchResults === null
-                      ? `${visibleMessages.length} of ${messages.length} loaded messages`
+                      ? `${visibleMessages.length} shown · ${totalMessages.toLocaleString()} available`
                       : `${visibleMessages.length} search results`}
                 </span>
-              </div>
-              <div className="kafka-message-tools">
-                <input
-                  className="input"
-                  placeholder="Search loaded messages or search the whole topic…"
-                  value={search}
-                  onChange={(event) => {
-                    cancelSearch()
-                    setSearch(event.target.value)
-                    setSearchResults(null)
-                    setSearchScanned(0)
-                  }}
-                  disabled={!messages.length && !selectedTopic}
-                />
-                <select
-                  className="input kafka-limit"
-                  value={limit}
-                  onChange={(event) => setLimit(Number(event.target.value))}
-                >
-                  {[10, 20, 50, 100].map((count) => <option key={count} value={count}>{count}</option>)}
-                </select>
-                <button
-                  className="btn"
-                  onClick={() => void loadMessages()}
-                  disabled={!selectedTopic || loadingMessages}
-                >
-                  {loadingMessages ? 'Loading…' : 'Load recent'}
-                </button>
-                <button
-                  className="btn btn-primary"
-                  onClick={() => void searchTopic()}
-                  disabled={!selectedTopic || !search.trim() || searching || loadingMessages}
-                >
-                  Search topic
-                </button>
-                {searching && (
-                  <button className="btn" onClick={cancelSearch}>Cancel</button>
-                )}
-                <button className="btn" onClick={() => selectedTopic && void openTopicDetail(selectedTopic)} disabled={!selectedTopic}>
-                  Details
-                </button>
-                <button className="btn btn-primary" onClick={() => setProducing(true)} disabled={!selectedTopic}>
-                  Send event
-                </button>
               </div>
               {searchResults !== null && (
                 <div className="muted kafka-search-status">
@@ -981,7 +1290,7 @@ export function KafkaWorkspace({ onClose }: { onClose: () => void }) {
                   </details>
                 ))}
                 {selectedTopic && !loadingMessages && searchResults === null && messages.length === 0 && (
-                  <div className="muted kafka-empty-messages">No recent messages in this topic</div>
+                  <div className="muted kafka-empty-messages">No messages found at this position</div>
                 )}
                 {searchResults !== null && !searching && visibleMessages.length === 0 && (
                   <div className="muted kafka-empty-messages">No messages match this search</div>
@@ -991,6 +1300,7 @@ export function KafkaWorkspace({ onClose }: { onClose: () => void }) {
                 )}
               </div>
             </section>
+            )}
           </div>
         )}
       </main>

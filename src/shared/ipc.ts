@@ -18,7 +18,7 @@ import type {
   StoredConnection,
   BulkResult,
   MsearchResults,
-  KafkaMessage,
+  KafkaMessagesResult,
   KafkaSearchProgress,
   KafkaSearchResult,
   KafkaTopicInfo,
@@ -158,12 +158,16 @@ export interface MsearchInput {
   ndjson: string
 }
 
-export interface KafkaMessagesInput {
+interface KafkaMessagesBaseInput {
   topic: string
   limit: number
 }
 
-export interface KafkaSearchInput extends KafkaMessagesInput {
+export type KafkaMessagesInput =
+  | (KafkaMessagesBaseInput & { mode: 'beginning' | 'end' })
+  | (KafkaMessagesBaseInput & { mode: 'offset'; partition: number; offset: string })
+
+export interface KafkaSearchInput extends KafkaMessagesBaseInput {
   query: string
 }
 
@@ -374,8 +378,12 @@ export interface ElectronApi {
   createKafkaTopic(connectionId: string, input: KafkaTopicCreateInput): Promise<boolean>
   deleteKafkaTopic(connectionId: string, topic: string): Promise<void>
   fetchKafkaTopicPartitions(connectionId: string, topic: string): Promise<KafkaPartitionInfo[]>
-  fetchKafkaConsumerGroups(connectionId: string, topic?: string): Promise<KafkaConsumerGroupInfo[]>
-  fetchKafkaMessages(connectionId: string, input: KafkaMessagesInput, requestId?: string): Promise<KafkaMessage[]>
+  fetchKafkaConsumerGroups(
+    connectionId: string,
+    topic?: string,
+    includeLag?: boolean,
+  ): Promise<KafkaConsumerGroupInfo[]>
+  fetchKafkaMessages(connectionId: string, input: KafkaMessagesInput, requestId?: string): Promise<KafkaMessagesResult>
   searchKafkaMessages(
     connectionId: string,
     input: KafkaSearchInput,

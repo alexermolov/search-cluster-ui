@@ -49,7 +49,7 @@ export function App() {
               </span>
               <span className="product-card-title">Apache Kafka</span>
               <span className="product-card-description">
-                Browse Kafka topics and inspect recent messages.
+                Browse topics, inspect messages, and find consumer subscriptions.
               </span>
               <span className="product-card-action">Open Kafka browser <span aria-hidden="true">→</span></span>
             </button>

@@ -12,6 +12,7 @@ import type {
   KafkaConsumerGroupInfo,
   KafkaConsumerGroupMember,
   KafkaMessage,
+  KafkaMessagesResult,
   KafkaSearchProgress,
   KafkaSearchResult,
   KafkaPartitionInfo,
@@ -259,39 +260,44 @@ export async function fetchKafkaTopicPartitions(
 function parseMemberAssignment(buffer: Buffer): Record<string, number[]> {
   try {
     let offset = 0
-    const readInt16 = () => {
+    const readInt16 = (): number => {
+      if (offset + 2 > buffer.length) throw new Error('Invalid member assignment')
       const val = buffer.readInt16BE(offset)
       offset += 2
       return val
     }
-    const readInt32 = () => {
+    const readInt32 = (): number => {
+      if (offset + 4 > buffer.length) throw new Error('Invalid member assignment')
       const val = buffer.readInt32BE(offset)
       offset += 4
       return val
     }
-    const readString = () => {
+    const readString = (): string => {
       const len = readInt16()
       if (len < 0) return ''
+      if (offset + len > buffer.length) throw new Error('Invalid member assignment')
       const str = buffer.toString('utf8', offset, offset + len)
       offset += len
       return str
     }
-    // Version
+    // MemberAssignment v0: version, topic/partition arrays, then user data.
     readInt16()
-    const topicCount = readInt32()
-    const topics: string[] = []
-    for (let i = 0; i < topicCount; i++) {
-      topics.push(readString())
+    const assignmentCount = readInt32()
+    if (assignmentCount < 0 || assignmentCount > buffer.length / 6) {
+      throw new Error('Invalid member assignment')
     }
-    const partitionCount = readInt32()
-    const partitions: number[] = []
-    for (let i = 0; i < partitionCount; i++) {
-      partitions.push(readInt32())
-    }
-    // Assign all partitions to all topics (simplified; in reality assignment is per-topic)
     const result: Record<string, number[]> = {}
-    for (const topic of topics) {
-      result[topic] = [...partitions]
+    for (let i = 0; i < assignmentCount; i++) {
+      const topic = readString()
+      const partitionCount = readInt32()
+      if (!topic || partitionCount < 0 || partitionCount > buffer.length / 4) {
+        throw new Error('Invalid member assignment')
+      }
+      const partitions: number[] = []
+      for (let j = 0; j < partitionCount; j++) {
+        partitions.push(readInt32())
+      }
+      result[topic] = partitions
     }
     return result
   } catch {
@@ -303,6 +309,7 @@ export async function fetchKafkaConsumerGroups(
   cache: KafkaClientCache,
   config: KafkaConnection,
   topic?: string,
+  includeLag = true,
 ): Promise<KafkaConsumerGroupInfo[]> {
   const client = cache.get(config)
   const admin = await client.admin()
@@ -323,45 +330,49 @@ export async function fetchKafkaConsumerGroups(
 
   // Keep the number of concurrent broker requests bounded on large clusters.
   const offsetMap = new Map<string, Map<string, Map<number, string>>>()
-  for (let offset = 0; offset < relevantGroupIds.length; offset += KAFKA_OFFSET_CONCURRENCY) {
-    await Promise.all(
-      relevantGroupIds.slice(offset, offset + KAFKA_OFFSET_CONCURRENCY).map(async (groupId) => {
-        try {
-          const offsets = await admin.fetchOffsets({ groupId, resolveOffsets: true })
-          const topicMap = new Map<string, Map<number, string>>()
-          for (const topicOffset of offsets) {
-            const partitionMap = new Map<number, string>()
-            for (const po of topicOffset.partitions) {
-              partitionMap.set(po.partition, po.offset)
+  if (includeLag) {
+    for (let offset = 0; offset < relevantGroupIds.length; offset += KAFKA_OFFSET_CONCURRENCY) {
+      await Promise.all(
+        relevantGroupIds.slice(offset, offset + KAFKA_OFFSET_CONCURRENCY).map(async (groupId) => {
+          try {
+            const offsets = await admin.fetchOffsets({ groupId, resolveOffsets: true })
+            const topicMap = new Map<string, Map<number, string>>()
+            for (const topicOffset of offsets) {
+              const partitionMap = new Map<number, string>()
+              for (const po of topicOffset.partitions) {
+                partitionMap.set(po.partition, po.offset)
+              }
+              topicMap.set(topicOffset.topic, partitionMap)
             }
-            topicMap.set(topicOffset.topic, partitionMap)
+            offsetMap.set(groupId, topicMap)
+          } catch {
+            // Group may not have offsets yet
           }
-          offsetMap.set(groupId, topicMap)
-        } catch {
-          // Group may not have offsets yet
-        }
-      }),
-    )
+        }),
+      )
+    }
   }
 
   // Fetch high watermarks for relevant topics in parallel
   const allTopics = new Set<string>()
-  for (const desc of descriptions) {
-    if (topic && !relevantGroupIds.includes(desc.groupId)) continue
-    for (const member of desc.members) {
-      const assignments = parseMemberAssignment(member.memberAssignment)
-      for (const assignedTopic of Object.keys(assignments)) {
-        allTopics.add(assignedTopic)
+  if (includeLag) {
+    for (const desc of descriptions) {
+      if (topic && !relevantGroupIds.includes(desc.groupId)) continue
+      for (const member of desc.members) {
+        const assignments = parseMemberAssignment(member.memberAssignment)
+        for (const assignedTopic of Object.keys(assignments)) {
+          allTopics.add(assignedTopic)
+        }
+      }
+    }
+    for (const topicMap of offsetMap.values()) {
+      for (const offsetTopic of topicMap.keys()) {
+        allTopics.add(offsetTopic)
       }
     }
   }
-  for (const topicMap of offsetMap.values()) {
-    for (const offsetTopic of topicMap.keys()) {
-      allTopics.add(offsetTopic)
-    }
-  }
 
-  const topicsToFetch = topic ? [topic] : Array.from(allTopics)
+  const topicsToFetch = includeLag ? (topic ? [topic] : Array.from(allTopics)) : []
   const topicHighOffsets = new Map<string, Map<number, string>>()
   for (let offset = 0; offset < topicsToFetch.length; offset += KAFKA_OFFSET_CONCURRENCY) {
     await Promise.all(
@@ -515,9 +526,10 @@ function kafkaMessageMatches(
 export async function fetchKafkaMessages(
   cache: KafkaClientCache,
   config: KafkaConnection,
-  { topic, limit }: KafkaMessagesInput,
+  input: KafkaMessagesInput,
   signal?: AbortSignal,
-): Promise<KafkaMessage[]> {
+): Promise<KafkaMessagesResult> {
+  const { topic, limit } = input
   if (!topic.trim()) throw new Error('A Kafka topic is required')
   if (!Number.isInteger(limit) || limit < 1 || limit > 100)
     throw new Error('Message limit must be between 1 and 100')
@@ -533,12 +545,48 @@ export async function fetchKafkaMessages(
     const offsets = await admin.fetchTopicOffsets(topic)
     if (!offsets.length) throw new Error(`Topic "${topic}" has no partitions`)
 
-    const perPartitionLimit = Math.ceil(limit / offsets.length)
-    const endOffsets = new Map(offsets.map((item) => [item.partition, BigInt(item.high)]))
+    const total = offsets.reduce((sum, item) => sum + (BigInt(item.high) - BigInt(item.low)), 0n)
+    const activeOffsets =
+      input.mode === 'offset'
+        ? offsets.filter((item) => item.partition === input.partition)
+        : offsets
+    if (input.mode === 'offset') {
+      if (!Number.isInteger(input.partition) || input.partition < 0)
+        throw new Error('Partition must be a non-negative integer')
+      if (!/^\d+$/.test(input.offset))
+        throw new Error('Offset must be a non-negative integer')
+      const selected = activeOffsets[0]
+      if (!selected) throw new Error(`Partition ${input.partition} does not exist in "${topic}"`)
+      const requestedOffset = BigInt(input.offset)
+      const low = BigInt(selected.low)
+      const high = BigInt(selected.high)
+      if (requestedOffset < low || requestedOffset > high)
+        throw new Error(`Offset must be between ${low} and ${high} for partition ${input.partition}`)
+    }
+
+    const perPartitionLimit = Math.ceil(limit / activeOffsets.length)
+    const endOffsets = new Map(
+      offsets.map((item) => {
+        const low = BigInt(item.low)
+        const high = BigInt(item.high)
+        if (input.mode === 'beginning') {
+          const end = low + BigInt(perPartitionLimit)
+          return [item.partition, end < high ? end : high]
+        }
+        return [item.partition, high]
+      }),
+    )
     const starts = new Map(
       offsets.map((item) => {
         const low = BigInt(item.low)
         const high = BigInt(item.high)
+        if (input.mode === 'beginning') return [item.partition, low]
+        if (input.mode === 'offset') {
+          return [
+            item.partition,
+            item.partition === input.partition ? BigInt(input.offset) : high,
+          ]
+        }
         const start = high > BigInt(perPartitionLimit) ? high - BigInt(perPartitionLimit) : 0n
         return [item.partition, start > low ? start : low]
       }),
@@ -629,7 +677,14 @@ export async function fetchKafkaMessages(
       signal?.removeEventListener('abort', onAbort)
     }
 
-    return messages.sort(compareKafkaMessages)
+    return {
+      messages: messages.sort(
+        input.mode === 'end'
+          ? compareKafkaMessages
+          : (a, b) => compareKafkaMessages(b, a),
+      ),
+      total: Number(total),
+    }
   } finally {
     try {
       if (consumer) {
