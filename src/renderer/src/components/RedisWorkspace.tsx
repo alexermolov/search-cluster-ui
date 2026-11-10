@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type {
   RedisKeyDetail,
   RedisKeyEntry,
@@ -8,6 +8,7 @@ import type {
 } from '../../../shared/types'
 import type { RedisConnectionInput, RedisKeySaveInput } from '../../../shared/types'
 import { api, errorMessage } from '../api'
+import { CommandPalettePanel, useRedisPaletteCommands } from './CommandPalette'
 
 const REDIS_MAX_LOADED_KEYS = 5000
 const REDIS_KEY_ROW_HEIGHT = 56
@@ -626,6 +627,7 @@ export function RedisWorkspace({ onClose }: { onClose: () => void }) {
   const [error, setError] = useState<string | null>(null)
   const [editor, setEditor] = useState<KeyEditorState | null>(null)
   const [connectionEditor, setConnectionEditor] = useState<StoredRedisConnection | null | undefined>(undefined)
+  const [paletteOpen, setPaletteOpen] = useState(false)
   const keyRequest = useRef(0)
   const detailRequest = useRef(0)
   const serverRequest = useRef(0)
@@ -665,7 +667,7 @@ export function RedisWorkspace({ onClose }: { onClose: () => void }) {
     })
   }
 
-  async function reloadKeys(connectionId: string, append = false, filter = keyPattern): Promise<void> {
+  const reloadKeys = useCallback(async (connectionId: string, append = false, filter = keyPattern): Promise<void> => {
     const request = ++keyRequest.current
     const pattern = filter.trim()
     const match = append
@@ -704,9 +706,9 @@ export function RedisWorkspace({ onClose }: { onClose: () => void }) {
     } finally {
       if (request === keyRequest.current) setLoadingKeys(false)
     }
-  }
+  }, [scanMatch, cursor, keyPattern])
 
-  async function loadServer(connectionId: string): Promise<void> {
+  const loadServer = useCallback(async (connectionId: string): Promise<void> => {
     const request = ++serverRequest.current
     setLoadingServer(true)
     try {
@@ -717,9 +719,9 @@ export function RedisWorkspace({ onClose }: { onClose: () => void }) {
     } finally {
       if (request === serverRequest.current) setLoadingServer(false)
     }
-  }
+  }, [])
 
-  async function activate(connectionId: string): Promise<void> {
+  const activate = useCallback(async (connectionId: string): Promise<void> => {
     keyRequest.current += 1
     detailRequest.current += 1
     serverRequest.current += 1
@@ -729,7 +731,7 @@ export function RedisWorkspace({ onClose }: { onClose: () => void }) {
     setSelectedKey(null)
     setCommandOutput([])
     await Promise.all([reloadKeys(connectionId), loadServer(connectionId)])
-  }
+  }, [reloadKeys, loadServer])
 
   useEffect(() => {
     void api.listRedisConnections().then((items) => {
@@ -740,7 +742,24 @@ export function RedisWorkspace({ onClose }: { onClose: () => void }) {
         void loadServer(items[0].id)
       }
     }).catch((reason: unknown) => setError(errorMessage(reason)))
-  }, [])
+  }, [reloadKeys, loadServer])
+
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      const mod = e.ctrlKey || e.metaKey
+      if (mod && e.key.toLowerCase() === 'k') {
+        e.preventDefault()
+        setPaletteOpen(true)
+      } else if ((mod && e.key.toLowerCase() === 'r') || e.key === 'F5') {
+        e.preventDefault()
+        if (!active) return
+        if (tab === 'keys') void reloadKeys(active.id)
+        else if (tab === 'server') void loadServer(active.id)
+      }
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [active, tab, reloadKeys, loadServer])
 
   async function saveConnection(input: RedisConnectionInput): Promise<void> {
     const saved = await api.saveRedisConnection(input)
@@ -824,6 +843,29 @@ export function RedisWorkspace({ onClose }: { onClose: () => void }) {
       setRunningCommand(false)
     }
   }
+
+  const handleLoadMoreKeys = useMemo(() => {
+    if (!active || tab !== 'keys') return undefined
+    return () => void reloadKeys(active.id, true)
+  }, [active, tab, reloadKeys])
+
+  const paletteCommands = useRedisPaletteCommands({
+    connections,
+    activeId,
+    onSelectConnection: useCallback((id: string) => void activate(id), [activate]),
+    tab,
+    onSetTab: setTab,
+    onRefresh: useCallback(() => {
+      if (!active) return
+      if (tab === 'keys') void reloadKeys(active.id)
+      else if (tab === 'server') void loadServer(active.id)
+    }, [active, tab, reloadKeys, loadServer]),
+    onNewConnection: useCallback(() => setConnectionEditor(null), [setConnectionEditor]),
+    onLoadMoreKeys: handleLoadMoreKeys,
+    onClearConsole: useCallback(() => setCommandOutput([]), [setCommandOutput]),
+    onFocusCommandInput: useCallback(() => commandInput.current?.focus(), []),
+    onBackToPicker: onClose,
+  })
 
   return (
     <div className="app">
@@ -1224,6 +1266,11 @@ export function RedisWorkspace({ onClose }: { onClose: () => void }) {
           onSave={saveKey}
         />
       )}
+      <CommandPalettePanel
+        commands={paletteCommands}
+        open={paletteOpen}
+        onClose={() => setPaletteOpen(false)}
+      />
     </div>
   )
 }

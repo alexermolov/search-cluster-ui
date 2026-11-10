@@ -1,4 +1,5 @@
 import { useApp, type Tab } from '../store'
+import { useHotkeys } from '../hotkeys'
 import { ClusterSettingsPanel } from './ClusterSettingsPanel'
 import { IndexDetailView } from './IndexDetail'
 import { IndicesPanel } from './IndicesPanel'
@@ -12,6 +13,7 @@ import { HealthBadge } from './ui'
 const TABS: Tab[] = ['overview', 'indices', 'query', 'shards', 'snapshots', 'schemas', 'settings']
 
 export function Workspace() {
+  useHotkeys()
   const active = useApp((s) => s.connections.find((c) => c.id === s.activeId) ?? null)
   const overview = useApp((s) => s.overview)
   const tab = useApp((s) => s.tab)

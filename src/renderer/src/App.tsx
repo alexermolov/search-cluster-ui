@@ -5,15 +5,12 @@ import { KafkaWorkspace } from './components/KafkaWorkspace'
 import { RedisWorkspace } from './components/RedisWorkspace'
 import { Sidebar } from './components/Sidebar'
 import { Workspace } from './components/Workspace'
-import { useHotkeys } from './hotkeys'
 import { useApp } from './store'
 
 export function App() {
   const init = useApp((s) => s.init)
   const editor = useApp((s) => s.editor)
   const [mode, setMode] = useState<'picker' | 'search' | 'kafka' | 'redis'>('picker')
-
-  useHotkeys()
 
   useEffect(() => {
     void init()
@@ -64,6 +61,7 @@ export function App() {
               <span className="product-card-action">Open Redis browser <span aria-hidden="true">→</span></span>
             </button>
           </div>
+          <div className="product-picker-hint">Ctrl+K — Command palette</div>
         </div>
       </main>
     )

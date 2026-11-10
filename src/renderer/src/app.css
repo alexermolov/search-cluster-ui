@@ -152,6 +152,13 @@ body {
   text-align: center;
 }
 
+.product-picker-hint {
+  margin-top: 48px;
+  text-align: center;
+  font-size: 12px;
+  color: var(--text-dim);
+}
+
 .product-cards {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type {
   KafkaConnectionInput,
   KafkaAuthConfig,
@@ -17,6 +17,7 @@ import type {
 import { api, errorMessage } from '../api'
 import { JsonEditor } from './JsonEditor'
 import { JsonView } from './JsonView'
+import { CommandPalettePanel, useKafkaPaletteCommands } from './CommandPalette'
 
 const EMPTY_TLS: KafkaTlsConfig = {
   enabled: false,
@@ -592,6 +593,7 @@ export function KafkaWorkspace({ onClose }: { onClose: () => void }) {
   const [partitions, setPartitions] = useState<KafkaPartitionInfo[]>([])
   const [consumerGroups, setConsumerGroups] = useState<KafkaConsumerGroupInfo[]>([])
   const [loadingDetail, setLoadingDetail] = useState(false)
+  const [paletteOpen, setPaletteOpen] = useState(false)
   const topicRequest = useRef(0)
   const consumerRequest = useRef(0)
   const messageRequest = useRef(0)
@@ -638,7 +640,16 @@ export function KafkaWorkspace({ onClose }: { onClose: () => void }) {
       ))].sort((a, b) => a.localeCompare(b))
     : []
 
-  async function reloadTopics(connectionId: string): Promise<void> {
+  const cancelSearch = useCallback((): void => {
+    const requestId = activeSearchId.current
+    if (!requestId) return
+    activeSearchId.current = null
+    api.cancelRequest(requestId)
+    setSearching(false)
+    setSearchCancelled(true)
+  }, [])
+
+  const reloadTopics = useCallback(async (connectionId: string): Promise<void> => {
     cancelSearch()
     const request = ++topicRequest.current
     messageRequest.current += 1
@@ -660,9 +671,9 @@ export function KafkaWorkspace({ onClose }: { onClose: () => void }) {
     } finally {
       if (request === topicRequest.current) setLoadingTopics(false)
     }
-  }
+  }, [cancelSearch])
 
-  async function reloadConsumerGroups(connectionId: string): Promise<void> {
+  const reloadConsumerGroups = useCallback(async (connectionId: string): Promise<void> => {
     const request = ++consumerRequest.current
     setLoadingConsumers(true)
     setError(null)
@@ -679,7 +690,7 @@ export function KafkaWorkspace({ onClose }: { onClose: () => void }) {
     } finally {
       if (request === consumerRequest.current) setLoadingConsumers(false)
     }
-  }
+  }, [])
 
   useEffect(() => {
     if (viewMode !== 'consumers' || !activeId) return
@@ -687,7 +698,7 @@ export function KafkaWorkspace({ onClose }: { onClose: () => void }) {
     return () => {
       consumerRequest.current += 1
     }
-  }, [activeId, viewMode])
+  }, [activeId, viewMode, reloadConsumerGroups])
 
   useEffect(() => {
     void api.listKafkaConnections().then((items) => {
@@ -697,7 +708,24 @@ export function KafkaWorkspace({ onClose }: { onClose: () => void }) {
         void reloadTopics(items[0].id)
       }
     }).catch((reason: unknown) => setError(errorMessage(reason)))
-  }, [])
+  }, [reloadTopics])
+
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      const mod = e.ctrlKey || e.metaKey
+      if (mod && e.key.toLowerCase() === 'k') {
+        e.preventDefault()
+        setPaletteOpen(true)
+      } else if ((mod && e.key.toLowerCase() === 'r') || e.key === 'F5') {
+        e.preventDefault()
+        if (!activeId) return
+        if (viewMode === 'topics') void reloadTopics(activeId)
+        else void reloadConsumerGroups(activeId)
+      }
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [activeId, viewMode, reloadConsumerGroups, reloadTopics])
 
   async function save(input: KafkaConnectionInput): Promise<void> {
     const saved = await api.saveKafkaConnection(input)
@@ -773,15 +801,6 @@ export function KafkaWorkspace({ onClose }: { onClose: () => void }) {
     setViewMode('topics')
     setTopicFilter('')
     void loadMessages(topic)
-  }
-
-  function cancelSearch(): void {
-    const requestId = activeSearchId.current
-    if (!requestId) return
-    activeSearchId.current = null
-    api.cancelRequest(requestId)
-    setSearching(false)
-    setSearchCancelled(true)
   }
 
   async function searchTopic(): Promise<void> {
@@ -861,7 +880,7 @@ export function KafkaWorkspace({ onClose }: { onClose: () => void }) {
     }
   }
 
-  async function openTopicDetail(topic: string): Promise<void> {
+  const openTopicDetail = useCallback(async (topic: string): Promise<void> => {
     if (!active) return
     setDetailTopic(topic)
     setPartitions([])
@@ -880,7 +899,7 @@ export function KafkaWorkspace({ onClose }: { onClose: () => void }) {
     } finally {
       setLoadingDetail(false)
     }
-  }
+  }, [active])
 
   async function produceMessage(input: KafkaMessageProduceInput): Promise<void> {
     if (!active) throw new Error('No Kafka connection selected')
@@ -889,6 +908,42 @@ export function KafkaWorkspace({ onClose }: { onClose: () => void }) {
     await api.produceKafkaMessage(active.id, input)
     setNotice(`Event sent to "${input.topic}"`)
   }
+
+  const paletteCommands = useKafkaPaletteCommands({
+    connections,
+    activeId,
+    onSelectConnection: useCallback((id: string) => {
+      setActiveId(id)
+      void reloadTopics(id)
+    }, [setActiveId, reloadTopics]),
+    viewMode,
+    onSetViewMode: setViewMode,
+    topics,
+    visibleTopics,
+    selectedTopic,
+    onRefresh: useCallback(() => {
+      if (!activeId) return
+      if (viewMode === 'topics') void reloadTopics(activeId)
+      else void reloadConsumerGroups(activeId)
+    }, [activeId, viewMode, reloadTopics, reloadConsumerGroups]),
+    onNewConnection: useCallback(() => setEditor(null), [setEditor]),
+    onCreateTopic: useCallback(() => setCreatingTopic(true), [setCreatingTopic]),
+    onProduceMessage: useCallback(() => setProducing(true), [setProducing]),
+    onOpenTopicDetail: useCallback(() => {
+      if (selectedTopic) void openTopicDetail(selectedTopic)
+    }, [selectedTopic, openTopicDetail]),
+    onCopyAllTopics: useCallback(() => {
+      void navigator.clipboard.writeText(topics.map((t) => t.name).join('\n'))
+        .then(() => setNotice('Copied all topic names to clipboard'))
+        .catch(() => setNotice('Failed to copy topic names'))
+    }, [topics, setNotice]),
+    onCopyVisibleTopics: useCallback(() => {
+      void navigator.clipboard.writeText(visibleTopics.map((t) => t.name).join('\n'))
+        .then(() => setNotice('Copied visible topic names to clipboard'))
+        .catch(() => setNotice('Failed to copy topic names'))
+    }, [visibleTopics, setNotice]),
+    onBackToPicker: onClose,
+  })
 
   return (
     <div className="app">
@@ -1327,6 +1382,11 @@ export function KafkaWorkspace({ onClose }: { onClose: () => void }) {
           onClose={() => setDetailTopic(null)}
         />
       )}
+      <CommandPalettePanel
+        commands={paletteCommands}
+        open={paletteOpen}
+        onClose={() => setPaletteOpen(false)}
+      />
     </div>
   )
 }
