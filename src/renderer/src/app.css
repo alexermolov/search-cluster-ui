@@ -804,8 +804,6 @@ body {
 
 .redis-command-input {
   width: 100%;
-  min-height: 74px;
-  resize: vertical;
   font: 12px/1.5 var(--mono);
 }
 

@@ -668,6 +668,7 @@ export function KafkaWorkspace({ onClose }: { onClose: () => void }) {
     const connectionId = active.id
     setSelectedTopic(topic)
     setSearchResults(null)
+    setMessages([])
     setLoadingMessages(true)
     setError(null)
     try {
@@ -901,9 +902,11 @@ export function KafkaWorkspace({ onClose }: { onClose: () => void }) {
               <div className="kafka-section-heading">
                 <h2>{selectedTopic || 'Select a topic'}</h2>
                 <span className="muted">
-                  {searchResults === null
-                    ? `${visibleMessages.length} / ${messages.length} messages`
-                    : `${visibleMessages.length} search results`}
+                  {loadingMessages
+                    ? 'Loading messages…'
+                    : searchResults === null
+                      ? `${visibleMessages.length} of ${messages.length} loaded messages`
+                      : `${visibleMessages.length} search results`}
                 </span>
               </div>
               <div className="kafka-message-tools">

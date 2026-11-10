@@ -630,7 +630,7 @@ export function RedisWorkspace({ onClose }: { onClose: () => void }) {
   const detailRequest = useRef(0)
   const serverRequest = useRef(0)
   const keyListRef = useRef<HTMLDivElement>(null)
-  const commandInput = useRef<HTMLTextAreaElement>(null)
+  const commandInput = useRef<HTMLInputElement>(null)
 
   const active = connections.find((connection) => connection.id === activeId) ?? null
   const firstVisibleKey = Math.max(
@@ -1074,8 +1074,9 @@ export function RedisWorkspace({ onClose }: { onClose: () => void }) {
                   }}
                 >
                   <div className="redis-command-editor">
-                    <textarea
+                    <input
                       ref={commandInput}
+                      type="text"
                       className="input mono redis-command-input"
                       value={command}
                       onChange={(event) => {
