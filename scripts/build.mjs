@@ -1,5 +1,5 @@
 import { build } from 'esbuild'
-import { spawnSync } from 'node:child_process'
+import { build as viteBuild } from 'vite'
 
 const common = {
   bundle: true,
@@ -13,10 +13,6 @@ const common = {
 await build({ ...common, entryPoints: ['src/main/index.ts'], outfile: 'dist/main/index.js' })
 await build({ ...common, entryPoints: ['src/preload/index.ts'], outfile: 'dist/preload/index.js' })
 
-const res = spawnSync('npx vite build --config vite.renderer.config.ts', {
-  stdio: 'inherit',
-  shell: true,
-})
-if (res.status !== 0) process.exit(res.status ?? 1)
+await viteBuild({ configFile: 'vite.renderer.config.ts' })
 
 console.log('Build complete -> dist/ (run with: npm start)')
