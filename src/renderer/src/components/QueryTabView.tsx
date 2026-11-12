@@ -27,7 +27,6 @@ import { DocumentDialog } from "./DocumentDialog";
 import { ExplainDialog } from "./ExplainDialog";
 import { ExportDialog } from "./ExportDialog";
 import { ProfilePanel } from "./ProfilePanel";
-import { QueryHelpDialog } from "./QueryHelpDialog";
 
 const DEFAULT_QUERY = `{
   "size": 20,
@@ -36,7 +35,6 @@ const DEFAULT_QUERY = `{
 
 const PAGE_SIZE_OPTIONS = [10, 20, 50, 100];
 const MAX_TABLE_COLUMNS = 10;
-const PREVIEW_LIMIT = 80;
 const TAB_TITLE_LIMIT = 24;
 
 interface LastQuery {
@@ -85,16 +83,24 @@ function formatTime(at: number): string {
   return `${dd}.${mo} ${hh}:${mm}`;
 }
 
-/** First non-empty line of the query body, truncated. */
+/** Compact JSON or NDJSON query text for a single-line dropdown preview. */
 function bodyPreview(body: string): string {
-  const line =
-    body
-      .split("\n")
-      .map((l) => l.trim())
-      .find((l) => l.length > 0) ?? "";
-  return line.length > PREVIEW_LIMIT
-    ? `${line.slice(0, PREVIEW_LIMIT)}…`
-    : line;
+  const text = body.trim();
+  try {
+    return JSON.stringify(JSON.parse(text));
+  } catch {
+    return text
+      .split(/\r?\n/)
+      .map((line) => {
+        try {
+          return JSON.stringify(JSON.parse(line));
+        } catch {
+          return line.trim();
+        }
+      })
+      .filter(Boolean)
+      .join(" ");
+  }
 }
 
 function HighlightBlock({
@@ -185,7 +191,6 @@ export function QueryTabView({ tabId, onTitle }: Props) {
   const [exportOpen, setExportOpen] = useState(false);
   const [exporting, setExporting] = useState(false);
   const [indexDropdownOpen, setIndexDropdownOpen] = useState(false);
-  const [helpOpen, setHelpOpen] = useState(false);
 
   const toolbarRef = useRef<HTMLDivElement | null>(null);
   const indexDropdownRef = useRef<HTMLDivElement | null>(null);
@@ -777,20 +782,6 @@ export function QueryTabView({ tabId, onTitle }: Props) {
         </div>
 
         <button
-          className="btn"
-          onClick={() => setHelpOpen(true)}
-          title="Query DSL syntax help"
-        >
-          Help
-        </button>
-        <button
-          className="btn"
-          onClick={formatQuery}
-          title="Pretty-print the query body"
-        >
-          Format
-        </button>
-        <button
           className={highlightOn ? "btn btn-primary" : "btn"}
           onClick={toggleHighlight}
           title="Add highlight: { fields: { '*': {} } } to the request body"
@@ -821,13 +812,22 @@ export function QueryTabView({ tabId, onTitle }: Props) {
         </button>
       </div>
 
-      <JsonEditor
-        value={text}
-        onChange={setText}
-        onRun={() => void (isMsearchNdjson(text.trim()) ? runMsearch() : run())}
-        minHeight="160px"
-        completions={queryCompletionSource(() => fieldsRef.current)}
-      />
+      <div className="query-editor-container">
+        <JsonEditor
+          value={text}
+          onChange={setText}
+          onRun={() => void (isMsearchNdjson(text.trim()) ? runMsearch() : run())}
+          minHeight="160px"
+          completions={queryCompletionSource(() => fieldsRef.current)}
+        />
+        <button
+          className="btn query-editor-format"
+          onClick={formatQuery}
+          title="Pretty-print the query body"
+        >
+          Format
+        </button>
+      </div>
 
       {error && <div className="banner banner-error">{error}</div>}
 
@@ -1140,7 +1140,6 @@ export function QueryTabView({ tabId, onTitle }: Props) {
         />
       )}
 
-      {helpOpen && <QueryHelpDialog onClose={() => setHelpOpen(false)} />}
     </div>
   );
 }

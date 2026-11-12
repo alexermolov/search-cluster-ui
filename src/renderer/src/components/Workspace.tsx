@@ -76,11 +76,7 @@ export function Workspace() {
 
       {error && <div className="banner banner-error">{error}</div>}
 
-      {selectedIndex !== null ? (
-        <div className="ws-body">
-          <IndexDetailView indexName={selectedIndex} onBack={closeIndex} />
-        </div>
-      ) : (
+      {selectedIndex === null && (
         <>
           <nav className="tabbar">
             {TABS.map((t) => (
@@ -93,22 +89,31 @@ export function Workspace() {
               </button>
             ))}
           </nav>
+        </>
+      )}
 
-          <div className="ws-body">
-            {/* QueryPanel stays mounted (hidden via CSS) so query tabs keep
-                their state and in-flight requests when switching tabs. */}
-            <div className={tab === "query" ? "" : "hidden"}>
-              <QueryPanel />
-            </div>
+      <div className="ws-body">
+        {/* Keep query tabs mounted while navigating to index details or other tabs. */}
+        <div
+          className={
+            selectedIndex === null && tab === "query" ? "" : "hidden"
+          }
+        >
+          <QueryPanel />
+        </div>
+        {selectedIndex !== null ? (
+          <IndexDetailView indexName={selectedIndex} onBack={closeIndex} />
+        ) : (
+          <>
             {tab === "overview" && <OverviewPanel />}
             {tab === "indices" && <IndicesPanel />}
             {tab === "shards" && <ShardsPanel />}
             {tab === "snapshots" && <SnapshotsPanel />}
             {tab === "schemas" && <SchemasPanel />}
             {tab === "settings" && <ClusterSettingsPanel />}
-          </div>
-        </>
-      )}
+          </>
+        )}
+      </div>
     </main>
   );
 }

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { QueryTabView } from "./QueryTabView";
+import { QueryHelpDialog } from "./QueryHelpDialog";
 
 interface QueryTabState {
   id: string;
@@ -23,6 +24,7 @@ function newTab(): QueryTabState {
 export function QueryPanel() {
   const [tabs, setTabs] = useState<QueryTabState[]>(() => [newTab()]);
   const [activeTabId, setActiveTabId] = useState<string>(() => tabs[0].id);
+  const [helpOpen, setHelpOpen] = useState(false);
 
   const addTab = useCallback(() => {
     const tab = newTab();
@@ -99,6 +101,13 @@ export function QueryPanel() {
         >
           +
         </button>
+        <button
+          className="btn qtab-help"
+          onClick={() => setHelpOpen(true)}
+          title="Query DSL syntax help"
+        >
+          Help
+        </button>
       </div>
 
       {tabs.map((t) => (
@@ -109,6 +118,7 @@ export function QueryPanel() {
           <QueryTabView tabId={t.id} onTitle={onTitle} />
         </div>
       ))}
+      {helpOpen && <QueryHelpDialog onClose={() => setHelpOpen(false)} />}
     </div>
   );
 }

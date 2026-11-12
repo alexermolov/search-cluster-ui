@@ -2671,8 +2671,23 @@ button.dropdown-item {
     padding: 4px 8px;
 }
 
+.qtab-help {
+    margin-left: auto;
+}
+
 .qtab-panel.hidden {
     display: none !important;
+}
+
+.query-editor-container {
+    position: relative;
+}
+
+.query-editor-container .query-editor-format {
+    position: absolute;
+    top: 8px;
+    right: 8px;
+    z-index: 1;
 }
 
 .profile-row {
