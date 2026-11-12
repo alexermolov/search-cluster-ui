@@ -20,6 +20,12 @@ export default defineConfig({
   // relative base so the built index.html works via win.loadFile()
   base: './',
   server: { port: 5173, strictPort: true },
+  resolve: {
+    alias: {
+      // ESM-only resolution workaround for CI (Windows + CJS Vite build)
+      'react-markdown': '../node_modules/react-markdown/index.js',
+    },
+  },
   build: {
     outDir: '../../dist/renderer',
     emptyOutDir: true,
