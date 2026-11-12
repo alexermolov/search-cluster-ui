@@ -944,9 +944,8 @@ export function QueryTabView({ tabId, onTitle }: Props) {
                   <span className="mono muted">{h._index}</span>
                   <span className="mono">{h._id}</span>
                 </summary>
-                {h.highlight && <HighlightBlock highlight={h.highlight} />}
                 <pre className="json">
-                  <JsonView value={h._source} />
+                  <JsonView value={h._source} highlights={h.highlight} />
                 </pre>
               </details>
             ))

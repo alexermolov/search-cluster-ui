@@ -103,6 +103,11 @@
     color: #7d5300;
 }
 
+:root[data-theme="light"] .json-highlight {
+    background: rgba(154, 103, 0, 0.2);
+    color: #7d5300;
+}
+
 * {
     box-sizing: border-box;
 }
@@ -2229,6 +2234,14 @@ textarea.input {
 }
 
 .hl em {
+    background: rgba(210, 153, 34, 0.25);
+    color: var(--yellow);
+    border-radius: 3px;
+    font-style: normal;
+    padding: 0 1px;
+}
+
+.json-highlight {
     background: rgba(210, 153, 34, 0.25);
     color: var(--yellow);
     border-radius: 3px;

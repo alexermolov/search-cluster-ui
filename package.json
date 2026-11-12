@@ -2,7 +2,7 @@
   "name": "opensearch-ui",
   "productName": "Search Cluster UI",
   "private": true,
-  "version": "0.9.11",
+  "version": "0.9.12",
   "description": "Desktop client for Elasticsearch, OpenSearch, Kafka, and Redis",
   "author": "Search Cluster UI Team",
   "main": "dist/main/index.js",

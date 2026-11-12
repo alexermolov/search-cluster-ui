@@ -22,7 +22,10 @@ function tokenClass(token: string): string {
  * Keys (string followed by a colon), strings, numbers, booleans, null
  * and punctuation are wrapped in spans; everything else is passed through.
  */
-export function highlightJson(text: string): string {
+export function highlightJson(
+  text: string,
+  markers?: { open: string; close: string },
+): string {
   let out = "";
   let last = 0;
   for (const m of text.matchAll(TOKEN_RE)) {
@@ -34,7 +37,15 @@ export function highlightJson(text: string): string {
     const isKey =
       token.startsWith('"') && /^\s*:/.test(text.slice(idx + token.length));
     const cls = isKey ? "tok-key" : tokenClass(token);
-    out += `<span class="${cls}">${escapeHtml(token)}</span>`;
+    let html = escapeHtml(token);
+    if (markers != null) {
+      html = html
+        .split(markers.open)
+        .join('<mark class="json-highlight">')
+        .split(markers.close)
+        .join("</mark>");
+    }
+    out += `<span class="${cls}">${html}</span>`;
     last = idx + token.length;
   }
   out += escapeHtml(text.slice(last));
@@ -43,11 +54,62 @@ export function highlightJson(text: string): string {
 
 interface Props {
   value: unknown;
+  highlights?: Record<string, string[]>;
 }
 
 /** Render JSON (object or pre-serialized string) with token colors. */
-export function JsonView({ value }: Props) {
-  const text =
-    typeof value === "string" ? value : JSON.stringify(value, null, 2);
-  return <span dangerouslySetInnerHTML={{ __html: highlightJson(text) }} />;
+export function JsonView({ value, highlights }: Props) {
+  let text: string;
+  let markers: { open: string; close: string } | undefined;
+
+  if (
+    highlights != null &&
+    typeof value === "object" &&
+    value !== null &&
+    !Array.isArray(value)
+  ) {
+    const rawFragments = Object.values(highlights).flat();
+    const markerSource = `${JSON.stringify(value)}${rawFragments.join("")}`;
+    let markerIndex = 0;
+    let markerPair: { open: string; close: string };
+    do {
+      markerPair = {
+        open: `__SEARCH_CLUSTER_HIGHLIGHT_OPEN_${markerIndex}__`,
+        close: `__SEARCH_CLUSTER_HIGHLIGHT_CLOSE_${markerIndex}__`,
+      };
+      markerIndex += 1;
+    } while (
+      markerSource.includes(markerPair.open) ||
+      markerSource.includes(markerPair.close)
+    );
+    markers = markerPair;
+
+    const highlighted = Object.fromEntries(
+      Object.entries(highlights).map(([field, fragments]) => [
+        field,
+        fragments.map((fragment) =>
+          fragment
+            .replace(/<em>/gi, markerPair.open)
+            .replace(/<\/em>/gi, markerPair.close),
+        ),
+      ]),
+    );
+    const highlightKey = Object.prototype.hasOwnProperty.call(
+      value,
+      "_highlight",
+    )
+      ? "_search_highlight"
+      : "_highlight";
+    text =
+      JSON.stringify({ ...value, [highlightKey]: highlighted }, null, 2) ?? "";
+  } else {
+    text =
+      typeof value === "string" ? value : JSON.stringify(value, null, 2) ?? "";
+  }
+
+  return (
+    <span
+      dangerouslySetInnerHTML={{ __html: highlightJson(text, markers) }}
+    />
+  );
 }
