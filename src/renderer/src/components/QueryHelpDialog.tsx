@@ -1,5 +1,6 @@
 import { useCallback } from "react";
 import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 import helpContent from "../assets/query-help.md?raw";
 
 interface Props {
@@ -19,7 +20,7 @@ export function QueryHelpDialog({ onClose }: Props) {
       <div className="modal help-modal">
         <h2>Elasticsearch Query DSL — справка</h2>
         <div className="help-content">
-          <ReactMarkdown>{helpContent}</ReactMarkdown>
+          <ReactMarkdown remarkPlugins={[remarkGfm]}>{helpContent}</ReactMarkdown>
         </div>
         <div className="modal-footer">
           <span className="spacer" />
