@@ -1,3 +1,4 @@
+import { fileURLToPath } from 'node:url'
 import { defineConfig, type Plugin } from 'vite'
 import react from '@vitejs/plugin-react'
 
@@ -23,7 +24,7 @@ export default defineConfig({
   resolve: {
     alias: {
       // ESM-only resolution workaround for CI (Windows + CJS Vite build)
-      'react-markdown': '../node_modules/react-markdown/index.js',
+      'react-markdown': fileURLToPath(new URL('./node_modules/react-markdown/index.js', import.meta.url)),
     },
   },
   build: {
