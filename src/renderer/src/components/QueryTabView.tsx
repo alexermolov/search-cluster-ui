@@ -23,6 +23,7 @@ import { DocumentDialog } from './DocumentDialog'
 import { ExplainDialog } from './ExplainDialog'
 import { ExportDialog } from './ExportDialog'
 import { ProfilePanel } from './ProfilePanel'
+import { QueryHelpDialog } from './QueryHelpDialog'
 
 const DEFAULT_QUERY = `{
   "size": 20,
@@ -121,6 +122,11 @@ export function QueryTabView({ tabId, onTitle }: Props) {
   const indices = useApp((s) => s.indices)
 
   const [index, setIndex] = useState('')
+  const filteredIndices = useMemo(() => {
+    const q = index.trim().toLowerCase()
+    if (!q) return indices
+    return indices.filter((i) => i.name.toLowerCase().includes(q))
+  }, [indices, index])
   const [text, setText] = useState(DEFAULT_QUERY)
   const [result, setResult] = useState<SearchResults | null>(null)
   const [msearchResult, setMsearchResult] = useState<MsearchResults | null>(null)
@@ -148,6 +154,7 @@ export function QueryTabView({ tabId, onTitle }: Props) {
   const [exportOpen, setExportOpen] = useState(false)
   const [exporting, setExporting] = useState(false)
   const [indexDropdownOpen, setIndexDropdownOpen] = useState(false)
+  const [helpOpen, setHelpOpen] = useState(false)
 
   const toolbarRef = useRef<HTMLDivElement | null>(null)
   const indexDropdownRef = useRef<HTMLDivElement | null>(null)
@@ -475,26 +482,27 @@ function renderCell(hit: SearchHit, column: string): ReactNode {
   return (
     <div className="query">
       <div className="toolbar" ref={toolbarRef}>
-        <div className="dropdown-wrap" style={{ flex: '1 1 auto', display: 'flex' }} ref={indexDropdownRef}>
+        <div className="dropdown-wrap" style={{ width: '100%', maxWidth: 380 }} ref={indexDropdownRef}>
           <input
             className="input mono"
             placeholder="Index pattern, e.g. logs-*"
             value={index}
             onChange={(e) => setIndex(e.target.value)}
+            onFocus={() => setIndexDropdownOpen(true)}
           />
           <button
-            className="btn"
+            className="btn btn-sm"
             onClick={() => setIndexDropdownOpen((v) => !v)}
             title="Select index"
           >
             ▼
           </button>
           {indexDropdownOpen && (
-            <div className="dropdown" style={{ maxHeight: '20rem', overflow: 'auto', minWidth: '100%' }}>
-              {indices.length === 0 ? (
-                <div className="dropdown-empty">No indices</div>
+            <div className="dropdown" style={{ overflow: 'auto', minWidth: '100%' }}>
+              {filteredIndices.length === 0 ? (
+                <div className="dropdown-empty">{index.trim() ? 'No matches' : 'No indices'}</div>
               ) : (
-                indices.map((i) => (
+                filteredIndices.map((i) => (
                   <div
                     key={i.name}
                     className="dropdown-item"
@@ -659,6 +667,9 @@ function renderCell(hit: SearchHit, column: string): ReactNode {
           )}
         </div>
 
+        <button className="btn" onClick={() => setHelpOpen(true)} title="Query DSL syntax help">
+          Help
+        </button>
         <button className="btn" onClick={formatQuery} title="Pretty-print the query body">
           Format
         </button>
@@ -966,6 +977,8 @@ function renderCell(hit: SearchHit, column: string): ReactNode {
           }}
         />
       )}
+
+      {helpOpen && <QueryHelpDialog onClose={() => setHelpOpen(false)} />}
     </div>
   )
 }

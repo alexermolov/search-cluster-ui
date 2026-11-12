@@ -1701,6 +1701,11 @@ body {
   width: 100%;
 }
 
+.btn-sm {
+  padding: 4px 10px;
+  font-size: 12px;
+}
+
 .input {
   width: 100%;
   padding: 7px 10px;
@@ -1920,6 +1925,119 @@ textarea.input {
   flex: 1;
 }
 
+/* ---------- Help dialog ---------- */
+
+.help-modal {
+  width: 900px;
+  overflow: hidden;
+}
+
+.help-content {
+  overflow-y: auto;
+  flex: 1;
+  min-height: 0;
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.help-content h1,
+.help-content h2,
+.help-content h3 {
+  margin: 16px 0 8px;
+  font-weight: 650;
+  color: var(--text);
+  border-bottom: 1px solid var(--border-soft);
+  padding-bottom: 4px;
+}
+
+.help-content h1 {
+  font-size: 17px;
+}
+.help-content h2 {
+  font-size: 15px;
+}
+.help-content h3 {
+  font-size: 13px;
+  border-bottom: none;
+}
+
+.help-content p {
+  margin: 8px 0;
+}
+
+.help-content ul,
+.help-content ol {
+  margin: 8px 0;
+  padding-left: 20px;
+}
+
+.help-content li {
+  margin: 4px 0;
+}
+
+.help-content pre {
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 12px 14px;
+  overflow-x: auto;
+  margin: 10px 0;
+  font-family: var(--mono);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.help-content code {
+  font-family: var(--mono);
+  background: var(--bg-elevated);
+  padding: 1px 4px;
+  border-radius: 4px;
+  font-size: 12px;
+}
+
+.help-content pre code {
+  background: transparent;
+  padding: 0;
+  border-radius: 0;
+}
+
+.help-content table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 10px 0;
+  font-size: 12px;
+}
+
+.help-content th,
+.help-content td {
+  border: 1px solid var(--border);
+  padding: 6px 10px;
+  text-align: left;
+}
+
+.help-content th {
+  background: var(--bg-elevated);
+  font-weight: 600;
+}
+
+.help-content blockquote {
+  margin: 10px 0;
+  padding: 8px 12px;
+  border-left: 3px solid var(--accent);
+  background: var(--bg-elevated);
+  color: var(--text-dim);
+}
+
+.help-content hr {
+  border: none;
+  border-top: 1px solid var(--border-soft);
+  margin: 16px 0;
+}
+
+.help-content strong {
+  font-weight: 650;
+}
+
 /* ---------- Index view (fullscreen) ---------- */
 
 .index-view {
@@ -2109,6 +2227,9 @@ textarea.input {
 
 .dropdown-wrap {
   position: relative;
+  display: flex;
+  align-items: center;
+  gap: 6px;
 }
 
 .dropdown {
