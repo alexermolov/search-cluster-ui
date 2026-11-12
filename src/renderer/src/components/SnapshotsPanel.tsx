@@ -1,126 +1,135 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
-import type { SnapshotInfo } from '../../../shared/types'
-import { api, errorMessage } from '../api'
-import { useApp } from '../store'
-import { ConfirmDialog } from './ConfirmDialog'
-import { ContextMenu, useContextMenu, type ContextMenuItem } from './ContextMenu'
-import { SnapshotCreateDialog } from './SnapshotCreateDialog'
-import { SnapshotRestoreDialog } from './SnapshotRestoreDialog'
+import { useEffect, useMemo, useRef, useState } from "react";
+import type { SnapshotInfo } from "../../../shared/types";
+import { api, errorMessage } from "../api";
+import { useApp } from "../store";
+import { ConfirmDialog } from "./ConfirmDialog";
+import {
+  ContextMenu,
+  useContextMenu,
+  type ContextMenuItem,
+} from "./ContextMenu";
+import { SnapshotCreateDialog } from "./SnapshotCreateDialog";
+import { SnapshotRestoreDialog } from "./SnapshotRestoreDialog";
 
 function statusBadgeClass(status: string): string {
-  if (status === 'SUCCESS') return 'badge badge-green'
-  if (status === 'PARTIAL' || status === 'IN_PROGRESS') return 'badge badge-yellow'
-  if (status === 'FAILED') return 'badge badge-red'
-  return 'badge badge-unknown'
+  if (status === "SUCCESS") return "badge badge-green";
+  if (status === "PARTIAL" || status === "IN_PROGRESS")
+    return "badge badge-yellow";
+  if (status === "FAILED") return "badge badge-red";
+  return "badge badge-unknown";
 }
 
 function IndicesCell({ indices }: { indices: string }) {
   const list = indices
-    .split(',')
+    .split(",")
     .map((s) => s.trim())
-    .filter(Boolean)
-  if (list.length === 0) return <span className="muted">—</span>
-  const shown = list.slice(0, 3).join(', ')
-  const rest = list.length - 3
+    .filter(Boolean);
+  if (list.length === 0) return <span className="muted">—</span>;
+  const shown = list.slice(0, 3).join(", ");
+  const rest = list.length - 3;
   return (
-    <span className="indices-cell" title={list.join(', ')}>
+    <span className="indices-cell" title={list.join(", ")}>
       {shown}
       {rest > 0 && <span className="muted"> +{rest} more</span>}
     </span>
-  )
+  );
 }
 
 export function SnapshotsPanel() {
-  const activeId = useApp((s) => s.activeId)
-  const [snapshots, setSnapshots] = useState<SnapshotInfo[]>([])
-  const [error, setError] = useState<string | null>(null)
-  const [loading, setLoading] = useState(true)
-  const [filter, setFilter] = useState('')
-  const [reloadTick, setReloadTick] = useState(0)
+  const activeId = useApp((s) => s.activeId);
+  const [snapshots, setSnapshots] = useState<SnapshotInfo[]>([]);
+  const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [filter, setFilter] = useState("");
+  const [reloadTick, setReloadTick] = useState(0);
 
-  const [createOpen, setCreateOpen] = useState(false)
-  const [restore, setRestore] = useState<SnapshotInfo | null>(null)
-  const [pendingDelete, setPendingDelete] = useState<SnapshotInfo | null>(null)
-  const [busy, setBusy] = useState(false)
-  const [actionError, setActionError] = useState<string | null>(null)
+  const [createOpen, setCreateOpen] = useState(false);
+  const [restore, setRestore] = useState<SnapshotInfo | null>(null);
+  const [pendingDelete, setPendingDelete] = useState<SnapshotInfo | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [actionError, setActionError] = useState<string | null>(null);
 
-  const ctx = useContextMenu<SnapshotInfo>()
+  const ctx = useContextMenu<SnapshotInfo>();
 
   useEffect(() => {
-    if (!activeId) return
-    let cancelled = false
-    setLoading(true)
-    setError(null)
-    setSnapshots([])
+    if (!activeId) return;
+    let cancelled = false;
+    setLoading(true);
+    setError(null);
+    setSnapshots([]);
 
     api
       .fetchSnapshots(activeId)
       .then((r) => !cancelled && setSnapshots(r))
       .catch((e) => !cancelled && setError(errorMessage(e)))
-      .finally(() => !cancelled && setLoading(false))
+      .finally(() => !cancelled && setLoading(false));
 
     return () => {
-      cancelled = true
-    }
-  }, [activeId, reloadTick])
+      cancelled = true;
+    };
+  }, [activeId, reloadTick]);
 
   // Poll while any snapshot is in progress, so statuses update live.
-  const hasInProgress = snapshots.some((s) => s.status === 'IN_PROGRESS')
-  const inProgressRef = useRef(hasInProgress)
-  inProgressRef.current = hasInProgress
+  const hasInProgress = snapshots.some((s) => s.status === "IN_PROGRESS");
+  const inProgressRef = useRef(hasInProgress);
+  inProgressRef.current = hasInProgress;
   useEffect(() => {
-    if (!hasInProgress) return
+    if (!hasInProgress) return;
     const timer = setInterval(() => {
-      if (!activeId || !inProgressRef.current) return
+      if (!activeId || !inProgressRef.current) return;
       api
         .fetchSnapshots(activeId)
         .then((r) => setSnapshots(r))
-        .catch(() => {}) // silent: polling failures keep the last state
-    }, 3000)
-    return () => clearInterval(timer)
-  }, [hasInProgress, activeId])
+        .catch(() => {}); // silent: polling failures keep the last state
+    }, 3000);
+    return () => clearInterval(timer);
+  }, [hasInProgress, activeId]);
 
   const visible = useMemo(() => {
-    const f = filter.trim().toLowerCase()
-    if (!f) return snapshots
+    const f = filter.trim().toLowerCase();
+    if (!f) return snapshots;
     return snapshots.filter(
       (s) =>
         s.snapshot.toLowerCase().includes(f) ||
         s.repository.toLowerCase().includes(f) ||
         s.indices.toLowerCase().includes(f),
-    )
-  }, [snapshots, filter])
+    );
+  }, [snapshots, filter]);
 
   async function runDelete(): Promise<void> {
-    if (!activeId || !pendingDelete) return
-    setBusy(true)
-    setActionError(null)
+    if (!activeId || !pendingDelete) return;
+    setBusy(true);
+    setActionError(null);
     try {
-      await api.deleteSnapshot(activeId, pendingDelete.repository, pendingDelete.snapshot)
-      setPendingDelete(null)
-      setReloadTick((t) => t + 1)
+      await api.deleteSnapshot(
+        activeId,
+        pendingDelete.repository,
+        pendingDelete.snapshot,
+      );
+      setPendingDelete(null);
+      setReloadTick((t) => t + 1);
     } catch (e) {
-      setActionError(errorMessage(e))
+      setActionError(errorMessage(e));
     } finally {
-      setBusy(false)
+      setBusy(false);
     }
   }
 
   function menuItems(s: SnapshotInfo): ContextMenuItem[] {
-    const inProgress = s.status === 'IN_PROGRESS'
+    const inProgress = s.status === "IN_PROGRESS";
     return [
       {
-        label: 'Restore…',
+        label: "Restore…",
         disabled: busy || inProgress,
         onSelect: () => setRestore(s),
       },
       {
-        label: 'Delete…',
+        label: "Delete…",
         danger: true,
         disabled: busy || inProgress,
         onSelect: () => setPendingDelete(s),
       },
-    ]
+    ];
   }
 
   return (
@@ -135,8 +144,12 @@ export function SnapshotsPanel() {
         <span className="muted">
           {visible.length} of {snapshots.length} snapshots
         </span>
-        <button className="btn" onClick={() => setReloadTick((t) => t + 1)} disabled={loading}>
-          {loading ? 'Refreshing…' : 'Refresh'}
+        <button
+          className="btn"
+          onClick={() => setReloadTick((t) => t + 1)}
+          disabled={loading}
+        >
+          {loading ? "Refreshing…" : "Refresh"}
         </button>
         <button className="btn btn-primary" onClick={() => setCreateOpen(true)}>
           Create snapshot…
@@ -151,7 +164,9 @@ export function SnapshotsPanel() {
       )}
 
       {!loading && snapshots.length === 0 && !error && (
-        <div className="muted">No snapshots (or no repositories configured)</div>
+        <div className="muted">
+          No snapshots (or no repositories configured)
+        </div>
       )}
 
       {snapshots.length > 0 && (
@@ -170,7 +185,10 @@ export function SnapshotsPanel() {
           </thead>
           <tbody>
             {visible.map((s) => (
-              <tr key={`${s.repository}|${s.snapshot}`} onContextMenu={(e) => ctx.open(e, s)}>
+              <tr
+                key={`${s.repository}|${s.snapshot}`}
+                onContextMenu={(e) => ctx.open(e, s)}
+              >
                 <td className="mono">{s.snapshot}</td>
                 <td className="mono muted">{s.repository}</td>
                 <td>
@@ -247,8 +265,11 @@ export function SnapshotsPanel() {
           title="Delete snapshot"
           message={
             <>
-              Delete snapshot <span className="mono">{pendingDelete.snapshot}</span> from repository{' '}
-              <span className="mono">{pendingDelete.repository}</span>? This cannot be undone.
+              Delete snapshot{" "}
+              <span className="mono">{pendingDelete.snapshot}</span> from
+              repository{" "}
+              <span className="mono">{pendingDelete.repository}</span>? This
+              cannot be undone.
             </>
           }
           confirmLabel="Delete"
@@ -258,5 +279,5 @@ export function SnapshotsPanel() {
         />
       )}
     </div>
-  )
+  );
 }

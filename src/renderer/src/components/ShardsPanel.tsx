@@ -1,85 +1,91 @@
-import { useEffect, useMemo, useState } from 'react'
-import type { ShardInfo } from '../../../shared/types'
-import { api, errorMessage } from '../api'
-import { useApp } from '../store'
-import { AllocationExplainDialog } from './AllocationExplainDialog'
-import { ContextMenu, useContextMenu, type ContextMenuItem } from './ContextMenu'
-import { RerouteDialog } from './RerouteDialog'
+import { useEffect, useMemo, useState } from "react";
+import type { ShardInfo } from "../../../shared/types";
+import { api, errorMessage } from "../api";
+import { useApp } from "../store";
+import { AllocationExplainDialog } from "./AllocationExplainDialog";
+import {
+  ContextMenu,
+  useContextMenu,
+  type ContextMenuItem,
+} from "./ContextMenu";
+import { RerouteDialog } from "./RerouteDialog";
 
 function stateBadgeClass(state: string): string {
-  if (state === 'STARTED') return 'badge badge-green'
-  if (state === 'UNASSIGNED') return 'badge badge-red'
-  if (state === 'RELOCATING' || state === 'INITIALIZING') return 'badge badge-yellow'
-  return 'badge badge-unknown'
+  if (state === "STARTED") return "badge badge-green";
+  if (state === "UNASSIGNED") return "badge badge-red";
+  if (state === "RELOCATING" || state === "INITIALIZING")
+    return "badge badge-yellow";
+  return "badge badge-unknown";
 }
 
 export function ShardsPanel() {
-  const activeId = useApp((s) => s.activeId)
-  const [shards, setShards] = useState<ShardInfo[]>([])
-  const [error, setError] = useState<string | null>(null)
-  const [loading, setLoading] = useState(true)
-  const [filter, setFilter] = useState('')
-  const [reloadTick, setReloadTick] = useState(0)
+  const activeId = useApp((s) => s.activeId);
+  const [shards, setShards] = useState<ShardInfo[]>([]);
+  const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [filter, setFilter] = useState("");
+  const [reloadTick, setReloadTick] = useState(0);
 
   const [explainTarget, setExplainTarget] = useState<
     { index: string; shard: string; primary: boolean } | null | undefined
-  >(undefined)
-  const [rerouteOpen, setRerouteOpen] = useState(false)
+  >(undefined);
+  const [rerouteOpen, setRerouteOpen] = useState(false);
 
-  const ctx = useContextMenu<ShardInfo>()
+  const ctx = useContextMenu<ShardInfo>();
 
   useEffect(() => {
-    if (!activeId) return
-    let cancelled = false
-    setLoading(true)
-    setError(null)
-    setShards([])
+    if (!activeId) return;
+    let cancelled = false;
+    setLoading(true);
+    setError(null);
+    setShards([]);
 
     api
       .fetchShards(activeId)
       .then((r) => !cancelled && setShards(r))
       .catch((e) => !cancelled && setError(errorMessage(e)))
-      .finally(() => !cancelled && setLoading(false))
+      .finally(() => !cancelled && setLoading(false));
 
     return () => {
-      cancelled = true
-    }
-  }, [activeId, reloadTick])
+      cancelled = true;
+    };
+  }, [activeId, reloadTick]);
 
   const visible = useMemo(() => {
-    const f = filter.trim().toLowerCase()
-    if (!f) return shards
+    const f = filter.trim().toLowerCase();
+    if (!f) return shards;
     return shards.filter(
-      (s) => s.index.toLowerCase().includes(f) || s.node.toLowerCase().includes(f),
-    )
-  }, [shards, filter])
+      (s) =>
+        s.index.toLowerCase().includes(f) || s.node.toLowerCase().includes(f),
+    );
+  }, [shards, filter]);
 
   const summary = useMemo(() => {
-    let primaries = 0
-    let replicas = 0
-    let unassigned = 0
+    let primaries = 0;
+    let replicas = 0;
+    let unassigned = 0;
     for (const s of shards) {
-      if (s.type === 'p') primaries++
-      else replicas++
-      if (s.state === 'UNASSIGNED') unassigned++
+      if (s.type === "p") primaries++;
+      else replicas++;
+      if (s.state === "UNASSIGNED") unassigned++;
     }
-    return { total: shards.length, primaries, replicas, unassigned }
-  }, [shards])
+    return { total: shards.length, primaries, replicas, unassigned };
+  }, [shards]);
 
   function menuItems(s: ShardInfo): ContextMenuItem[] {
     return [
       {
-        label: 'Explain allocation…',
-        disabled: s.state !== 'UNASSIGNED',
+        label: "Explain allocation…",
+        disabled: s.state !== "UNASSIGNED",
         onSelect: () =>
           setExplainTarget({
             index: s.index,
             shard: s.shard,
-            primary: s.type === 'p',
+            primary: s.type === "p",
           }),
       },
-      { label: 'Reroute…', onSelect: () => setRerouteOpen(true) },
-    ]
+      { label: "Reroute…", onSelect: () => setRerouteOpen(true) },
+    ];
   }
 
   return (
@@ -99,7 +105,9 @@ export function ShardsPanel() {
         </div>
         <div className="card">
           <div className="card-label">Unassigned</div>
-          <div className="card-value">{summary.unassigned.toLocaleString()}</div>
+          <div className="card-value">
+            {summary.unassigned.toLocaleString()}
+          </div>
         </div>
       </div>
 
@@ -113,8 +121,12 @@ export function ShardsPanel() {
         <span className="muted">
           {visible.length} of {shards.length} shards
         </span>
-        <button className="btn" onClick={() => setReloadTick((t) => t + 1)} disabled={loading}>
-          {loading ? 'Refreshing…' : 'Refresh'}
+        <button
+          className="btn"
+          onClick={() => setReloadTick((t) => t + 1)}
+          disabled={loading}
+        >
+          {loading ? "Refreshing…" : "Refresh"}
         </button>
         <button
           className="btn"
@@ -130,9 +142,13 @@ export function ShardsPanel() {
 
       {error && <div className="banner banner-error">{error}</div>}
 
-      {loading && shards.length === 0 && !error && <div className="loading">Loading shards…</div>}
+      {loading && shards.length === 0 && !error && (
+        <div className="loading">Loading shards…</div>
+      )}
 
-      {!loading && shards.length === 0 && !error && <div className="muted">No shards</div>}
+      {!loading && shards.length === 0 && !error && (
+        <div className="muted">No shards</div>
+      )}
 
       {shards.length > 0 && (
         <table className="table table-hover">
@@ -159,18 +175,18 @@ export function ShardsPanel() {
                 <td>{s.shard}</td>
                 <td>
                   <span className={`shard-type shard-type-${s.type}`}>
-                    {s.type === 'p' ? 'primary' : 'replica'}
+                    {s.type === "p" ? "primary" : "replica"}
                   </span>
                 </td>
                 <td>
                   <span className={stateBadgeClass(s.state)}>{s.state}</span>
                 </td>
-                <td>{s.docs?.toLocaleString() ?? '—'}</td>
+                <td>{s.docs?.toLocaleString() ?? "—"}</td>
                 <td>{s.store}</td>
                 <td className="mono muted">{s.ip}</td>
                 <td>{s.node}</td>
                 <td>
-                  {s.state === 'UNASSIGNED' && (
+                  {s.state === "UNASSIGNED" && (
                     <button
                       className="btn"
                       title={`Explain why shard ${s.shard} of ${s.index} is unassigned`}
@@ -178,7 +194,7 @@ export function ShardsPanel() {
                         setExplainTarget({
                           index: s.index,
                           shard: s.shard,
-                          primary: s.type === 'p',
+                          primary: s.type === "p",
                         })
                       }
                     >
@@ -224,5 +240,5 @@ export function ShardsPanel() {
         />
       )}
     </div>
-  )
+  );
 }

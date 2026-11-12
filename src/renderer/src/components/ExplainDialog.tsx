@@ -1,17 +1,17 @@
-import { useEffect, useState } from 'react'
-import { api, errorMessage } from '../api'
-import { JsonView } from './JsonView'
+import { useEffect, useState } from "react";
+import { api, errorMessage } from "../api";
+import { JsonView } from "./JsonView";
 
 interface Props {
-  connectionId: string
-  indexName: string
-  docId: string
+  connectionId: string;
+  indexName: string;
+  docId: string;
   /**
    * Query body of the last executed search (its .query part when present);
    * null sends match_all so the explain API always has a query.
    */
-  queryBody: Record<string, unknown> | null
-  onClose: () => void
+  queryBody: Record<string, unknown> | null;
+  onClose: () => void;
 }
 
 /**
@@ -25,28 +25,31 @@ export function ExplainDialog({
   queryBody,
   onClose,
 }: Props) {
-  const [result, setResult] = useState<Record<string, unknown> | null>(null)
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState<string | null>(null)
+  const [result, setResult] = useState<Record<string, unknown> | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    let cancelled = false
-    setLoading(true)
-    setError(null)
+    let cancelled = false;
+    setLoading(true);
+    setError(null);
     api
       .explain(connectionId, { index: indexName, docId, body: queryBody })
       .then((res) => {
-        if (!cancelled) setResult(res)
+        if (!cancelled) setResult(res);
       })
       .catch((e) => !cancelled && setError(errorMessage(e)))
-      .finally(() => !cancelled && setLoading(false))
+      .finally(() => !cancelled && setLoading(false));
     return () => {
-      cancelled = true
-    }
-  }, [connectionId, indexName, docId, queryBody])
+      cancelled = true;
+    };
+  }, [connectionId, indexName, docId, queryBody]);
 
   return (
-    <div className="modal-backdrop" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
+    <div
+      className="modal-backdrop"
+      onMouseDown={(e) => e.target === e.currentTarget && onClose()}
+    >
       <div className="modal doc-modal">
         <h2>
           Explain <span className="mono muted">{indexName}</span>
@@ -71,5 +74,5 @@ export function ExplainDialog({
         </div>
       </div>
     </div>
-  )
+  );
 }

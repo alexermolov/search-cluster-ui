@@ -1,16 +1,17 @@
-import { useApp } from '../store'
-import { fmtPct, HealthBadge } from './ui'
+import { useApp } from "../store";
+import { fmtPct, HealthBadge } from "./ui";
 
 export function OverviewPanel() {
-  const overview = useApp((s) => s.overview)
-  const loading = useApp((s) => s.loadingCluster)
-  const overviewUpdatedAt = useApp((s) => s.overviewUpdatedAt)
-  const autoRefreshSec = useApp((s) => s.autoRefreshSec)
+  const overview = useApp((s) => s.overview);
+  const loading = useApp((s) => s.loadingCluster);
+  const overviewUpdatedAt = useApp((s) => s.overviewUpdatedAt);
+  const autoRefreshSec = useApp((s) => s.autoRefreshSec);
 
-  if (loading && !overview) return <div className="loading">Loading cluster…</div>
-  if (!overview) return null
+  if (loading && !overview)
+    return <div className="loading">Loading cluster…</div>;
+  if (!overview) return null;
 
-  const { info, health, nodes } = overview
+  const { info, health, nodes } = overview;
 
   return (
     <div className="overview">
@@ -26,7 +27,9 @@ export function OverviewPanel() {
           <div className="card-value">
             <HealthBadge status={health.status} />
           </div>
-          {health.timedOut && <div className="card-sub">health request timed out</div>}
+          {health.timedOut && (
+            <div className="card-sub">health request timed out</div>
+          )}
         </div>
         <div className="card">
           <div className="card-label">Nodes</div>
@@ -35,15 +38,24 @@ export function OverviewPanel() {
         </div>
         <div className="card">
           <div className="card-label">Active shards</div>
-          <div className="card-value">{health.activeShards.toLocaleString()}</div>
+          <div className="card-value">
+            {health.activeShards.toLocaleString()}
+          </div>
           <div className="card-sub">
-            {health.relocatingShards} relocating · {health.initializingShards} initializing
+            {health.relocatingShards} relocating · {health.initializingShards}{" "}
+            initializing
           </div>
         </div>
-        <div className={health.unassignedShards > 0 ? 'card card-warn' : 'card'}>
+        <div
+          className={health.unassignedShards > 0 ? "card card-warn" : "card"}
+        >
           <div className="card-label">Unassigned shards</div>
           <div
-            className={health.unassignedShards > 0 ? 'card-value card-value-warn' : 'card-value'}
+            className={
+              health.unassignedShards > 0
+                ? "card-value card-value-warn"
+                : "card-value"
+            }
           >
             {health.unassignedShards.toLocaleString()}
           </div>
@@ -53,15 +65,19 @@ export function OverviewPanel() {
               : `${health.delayedUnassignedShards} delayed`}
           </div>
         </div>
-        <div className={health.pendingTasks > 0 ? 'card card-warn' : 'card'}>
+        <div className={health.pendingTasks > 0 ? "card card-warn" : "card"}>
           <div className="card-label">Pending tasks</div>
           <div
-            className={health.pendingTasks > 0 ? 'card-value card-value-warn' : 'card-value'}
+            className={
+              health.pendingTasks > 0
+                ? "card-value card-value-warn"
+                : "card-value"
+            }
           >
             {health.pendingTasks}
           </div>
           <div className="card-sub">
-            {health.pendingTasks > 0 ? 'cluster is processing tasks' : 'none'}
+            {health.pendingTasks > 0 ? "cluster is processing tasks" : "none"}
           </div>
         </div>
         <div className="card">
@@ -112,5 +128,5 @@ export function OverviewPanel() {
         </tbody>
       </table>
     </div>
-  )
+  );
 }

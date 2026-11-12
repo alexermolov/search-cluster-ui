@@ -1,10 +1,10 @@
-import { createPortal } from 'react-dom'
-import { useToasts } from '../toasts'
+import { createPortal } from "react-dom";
+import { useToasts } from "../toasts";
 
 export function ToastContainer() {
-  const toasts = useToasts((s) => s.toasts)
+  const toasts = useToasts((s) => s.toasts);
 
-  if (toasts.length === 0) return null
+  if (toasts.length === 0) return null;
 
   return createPortal(
     <div className="toast-container">
@@ -15,5 +15,5 @@ export function ToastContainer() {
       ))}
     </div>,
     document.body,
-  )
+  );
 }

@@ -1,31 +1,31 @@
-import { useEffect, useRef, useState, type ReactNode } from 'react'
-import type { IndexDetail, SearchResults } from '../../../shared/types'
-import { api, errorMessage } from '../api'
-import { useApp } from '../store'
-import { BulkDialog } from './BulkDialog'
-import { ConfirmDialog } from './ConfirmDialog'
-import { DocumentDialog } from './DocumentDialog'
-import { JsonView } from './JsonView'
-import { ReindexDialog } from './ReindexDialog'
+import { useEffect, useRef, useState, type ReactNode } from "react";
+import type { IndexDetail, SearchResults } from "../../../shared/types";
+import { api, errorMessage } from "../api";
+import { useApp } from "../store";
+import { BulkDialog } from "./BulkDialog";
+import { ConfirmDialog } from "./ConfirmDialog";
+import { DocumentDialog } from "./DocumentDialog";
+import { JsonView } from "./JsonView";
+import { ReindexDialog } from "./ReindexDialog";
 
 interface Props {
-  indexName: string
-  onBack: () => void
+  indexName: string;
+  onBack: () => void;
 }
 
 interface SectionProps {
-  title: string
-  defaultOpen?: boolean
-  children: ReactNode
+  title: string;
+  defaultOpen?: boolean;
+  children: ReactNode;
 }
 
 type PendingAction =
-  | { kind: 'delete' }
-  | { kind: 'clear' }
-  | { kind: 'delete-doc'; docId: string }
-  | { kind: 'open' }
-  | { kind: 'close' }
-  | { kind: 'remove-alias'; alias: string }
+  | { kind: "delete" }
+  | { kind: "clear" }
+  | { kind: "delete-doc"; docId: string }
+  | { kind: "open" }
+  | { kind: "close" }
+  | { kind: "remove-alias"; alias: string };
 
 /** Collapsible section with a rotating chevron, styled like the doc blocks. */
 function Section({ title, defaultOpen = false, children }: SectionProps) {
@@ -34,185 +34,196 @@ function Section({ title, defaultOpen = false, children }: SectionProps) {
       <summary className="section-title">{title}</summary>
       {children}
     </details>
-  )
+  );
 }
 
 /** Fullscreen index view: aliases, sample documents, mappings, settings + management actions. */
 export function IndexDetailView({ indexName, onBack }: Props) {
-  const activeId = useApp((s) => s.activeId)
-  const indices = useApp((s) => s.indices)
-  const refreshCluster = useApp((s) => s.refreshCluster)
-  const reloadTick = useApp((s) => s.indexReloadTick)
-  const reloadIndexDetail = useApp((s) => s.reloadIndexDetail)
+  const activeId = useApp((s) => s.activeId);
+  const indices = useApp((s) => s.indices);
+  const refreshCluster = useApp((s) => s.refreshCluster);
+  const reloadTick = useApp((s) => s.indexReloadTick);
+  const reloadIndexDetail = useApp((s) => s.reloadIndexDetail);
 
-  const [detail, setDetail] = useState<IndexDetail | null>(null)
-  const [docs, setDocs] = useState<SearchResults | null>(null)
-  const [error, setError] = useState<string | null>(null)
-  const [loading, setLoading] = useState(true)
-  const [menuOpen, setMenuOpen] = useState(false)
-  const [pageSize, setPageSize] = useState(10)
-  const [page, setPage] = useState(0)
-  const [aliasInput, setAliasInput] = useState('')
-  const [busy, setBusy] = useState(false)
-  const [actionError, setActionError] = useState<string | null>(null)
-  const [pending, setPending] = useState<PendingAction | null>(null)
-  const [reindexOpen, setReindexOpen] = useState(false)
-  const [editDoc, setEditDoc] = useState<{ docId: string; source: Record<string, unknown> } | null>(
-    null,
-  )
-  const [newDocOpen, setNewDocOpen] = useState(false)
-  const [bulkOpen, setBulkOpen] = useState(false)
-  const [copiedDocId, setCopiedDocId] = useState<string | null>(null)
+  const [detail, setDetail] = useState<IndexDetail | null>(null);
+  const [docs, setDocs] = useState<SearchResults | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [pageSize, setPageSize] = useState(10);
+  const [page, setPage] = useState(0);
+  const [aliasInput, setAliasInput] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [actionError, setActionError] = useState<string | null>(null);
+  const [pending, setPending] = useState<PendingAction | null>(null);
+  const [reindexOpen, setReindexOpen] = useState(false);
+  const [editDoc, setEditDoc] = useState<{
+    docId: string;
+    source: Record<string, unknown>;
+  } | null>(null);
+  const [newDocOpen, setNewDocOpen] = useState(false);
+  const [bulkOpen, setBulkOpen] = useState(false);
+  const [copiedDocId, setCopiedDocId] = useState<string | null>(null);
 
-  const headerRef = useRef<HTMLDivElement | null>(null)
+  const headerRef = useRef<HTMLDivElement | null>(null);
 
-  const indexStatus = indices.find((i) => i.name === indexName)?.status ?? null
+  const indexStatus = indices.find((i) => i.name === indexName)?.status ?? null;
 
   useEffect(() => {
-    if (!activeId) return
-    let cancelled = false
-    setLoading(true)
-    setError(null)
-    setDetail(null)
-    setDocs(null)
+    if (!activeId) return;
+    let cancelled = false;
+    setLoading(true);
+    setError(null);
+    setDetail(null);
+    setDocs(null);
 
     // Two independent requests: a closed index fails _search but details are still useful.
     api
       .fetchIndexDetail(activeId, indexName)
       .then((d) => !cancelled && setDetail(d))
       .catch((e) => !cancelled && setError(errorMessage(e)))
-      .finally(() => !cancelled && setLoading(false))
+      .finally(() => !cancelled && setLoading(false));
 
     api
       .search(activeId, {
         index: indexName,
-        body: { size: pageSize, from: page * pageSize, query: { match_all: {} } },
+        body: {
+          size: pageSize,
+          from: page * pageSize,
+          query: { match_all: {} },
+        },
       })
       .then((r) => {
-        if (cancelled) return
-        setDocs(r)
+        if (cancelled) return;
+        setDocs(r);
         if (r.hits.length === 0 && page > 0) {
-          setPage(page - 1)
+          setPage(page - 1);
         }
       })
-      .catch(() => {}) // sample docs are best-effort
+      .catch(() => {}); // sample docs are best-effort
 
     return () => {
-      cancelled = true
-    }
-  }, [activeId, indexName, reloadTick, page, pageSize])
+      cancelled = true;
+    };
+  }, [activeId, indexName, reloadTick, page, pageSize]);
 
   // Close the manage dropdown on outside click
   useEffect(() => {
-    if (!menuOpen) return
+    if (!menuOpen) return;
     function onPointerDown(e: MouseEvent): void {
-      if (headerRef.current != null && !headerRef.current.contains(e.target as Node)) {
-        setMenuOpen(false)
+      if (
+        headerRef.current != null &&
+        !headerRef.current.contains(e.target as Node)
+      ) {
+        setMenuOpen(false);
       }
     }
-    document.addEventListener('mousedown', onPointerDown)
-    return () => document.removeEventListener('mousedown', onPointerDown)
-  }, [menuOpen])
+    document.addEventListener("mousedown", onPointerDown);
+    return () => document.removeEventListener("mousedown", onPointerDown);
+  }, [menuOpen]);
 
   // Close the manage dropdown on Esc
   useEffect(() => {
-    if (!menuOpen) return
+    if (!menuOpen) return;
     function onKeyDown(e: KeyboardEvent): void {
-      if (e.key === 'Escape') setMenuOpen(false)
+      if (e.key === "Escape") setMenuOpen(false);
     }
-    document.addEventListener('keydown', onKeyDown)
-    return () => document.removeEventListener('keydown', onKeyDown)
-  }, [menuOpen])
+    document.addEventListener("keydown", onKeyDown);
+    return () => document.removeEventListener("keydown", onKeyDown);
+  }, [menuOpen]);
 
   function reload(): void {
-    setPage(0)
-    reloadIndexDetail()
+    setPage(0);
+    reloadIndexDetail();
   }
 
-  const totalDocs = docs?.total ?? 0
-  const totalPages = Math.max(1, Math.ceil(totalDocs / pageSize))
-  const fromCount = page * pageSize + 1
-  const toCount = Math.min((page + 1) * pageSize, totalDocs)
+  const totalDocs = docs?.total ?? 0;
+  const totalPages = Math.max(1, Math.ceil(totalDocs / pageSize));
+  const fromCount = page * pageSize + 1;
+  const toCount = Math.min((page + 1) * pageSize, totalDocs);
 
-  async function copyDocument(docId: string, source: Record<string, unknown>): Promise<void> {
+  async function copyDocument(
+    docId: string,
+    source: Record<string, unknown>,
+  ): Promise<void> {
     try {
-      await navigator.clipboard.writeText(JSON.stringify(source, null, 2))
-      setCopiedDocId(docId)
+      await navigator.clipboard.writeText(JSON.stringify(source, null, 2));
+      setCopiedDocId(docId);
       window.setTimeout(() => {
-        setCopiedDocId((id) => (id === docId ? null : id))
-      }, 1500)
+        setCopiedDocId((id) => (id === docId ? null : id));
+      }, 1500);
     } catch {
       // clipboard may be unavailable; silently ignore
     }
   }
 
   async function runAction(action: PendingAction): Promise<void> {
-    if (!activeId) return
-    setBusy(true)
-    setActionError(null)
+    if (!activeId) return;
+    setBusy(true);
+    setActionError(null);
     try {
-      if (action.kind === 'delete') {
-        await api.deleteIndex(activeId, indexName)
-        setPending(null)
-        setMenuOpen(false)
-        onBack()
-        await refreshCluster()
-        return
+      if (action.kind === "delete") {
+        await api.deleteIndex(activeId, indexName);
+        setPending(null);
+        setMenuOpen(false);
+        onBack();
+        await refreshCluster();
+        return;
       }
-      if (action.kind === 'clear') {
-        await api.clearIndex(activeId, indexName)
-        setPending(null)
-        setMenuOpen(false)
-        reload()
-        await refreshCluster()
-        return
+      if (action.kind === "clear") {
+        await api.clearIndex(activeId, indexName);
+        setPending(null);
+        setMenuOpen(false);
+        reload();
+        await refreshCluster();
+        return;
       }
-      if (action.kind === 'delete-doc') {
-        await api.deleteDocument(activeId, indexName, action.docId)
-        setPending(null)
-        reload()
-        await refreshCluster()
-        return
+      if (action.kind === "delete-doc") {
+        await api.deleteDocument(activeId, indexName, action.docId);
+        setPending(null);
+        reload();
+        await refreshCluster();
+        return;
       }
-      if (action.kind === 'open') {
-        await api.openIndex(activeId, indexName)
-      } else if (action.kind === 'close') {
-        await api.closeIndex(activeId, indexName)
+      if (action.kind === "open") {
+        await api.openIndex(activeId, indexName);
+      } else if (action.kind === "close") {
+        await api.closeIndex(activeId, indexName);
       } else {
-        await api.removeAlias(activeId, indexName, action.alias)
+        await api.removeAlias(activeId, indexName, action.alias);
       }
-      setPending(null)
-      setMenuOpen(false)
-      reload()
-      await refreshCluster()
+      setPending(null);
+      setMenuOpen(false);
+      reload();
+      await refreshCluster();
     } catch (e) {
-      setActionError(errorMessage(e))
+      setActionError(errorMessage(e));
     } finally {
-      setBusy(false)
+      setBusy(false);
     }
   }
 
   async function submitAlias(): Promise<void> {
-    const alias = aliasInput.trim()
-    if (!activeId || alias === '') return
-    setBusy(true)
-    setActionError(null)
+    const alias = aliasInput.trim();
+    if (!activeId || alias === "") return;
+    setBusy(true);
+    setActionError(null);
     try {
-      await api.addAlias(activeId, indexName, alias)
-      setAliasInput('')
-      setMenuOpen(false)
-      reload()
-      await refreshCluster()
+      await api.addAlias(activeId, indexName, alias);
+      setAliasInput("");
+      setMenuOpen(false);
+      reload();
+      await refreshCluster();
     } catch (e) {
-      setActionError(errorMessage(e))
+      setActionError(errorMessage(e));
     } finally {
-      setBusy(false)
+      setBusy(false);
     }
   }
 
-  if (!activeId) return null
+  if (!activeId) return null;
 
-  const aliasNames = detail ? Object.keys(detail.aliases) : []
+  const aliasNames = detail ? Object.keys(detail.aliases) : [];
 
   return (
     <div className="index-view">
@@ -222,33 +233,67 @@ export function IndexDetailView({ indexName, onBack }: Props) {
         </button>
         <h2 className="mono">{indexName}</h2>
         <div className="dropdown-wrap">
-          <button className="btn" onClick={() => setMenuOpen((v) => !v)} disabled={busy}>
-            {busy ? 'Working…' : 'Manage ▾'}
+          <button
+            className="btn"
+            onClick={() => setMenuOpen((v) => !v)}
+            disabled={busy}
+          >
+            {busy ? "Working…" : "Manage ▾"}
           </button>
           {menuOpen && (
             <div className="dropdown">
-              <button type="button" className="dropdown-item" onClick={() => setPending({ kind: 'delete' })}>
+              <button
+                type="button"
+                className="dropdown-item"
+                onClick={() => setPending({ kind: "delete" })}
+              >
                 <span className="preview danger-text">Delete index…</span>
               </button>
-              <button type="button" className="dropdown-item" onClick={() => setPending({ kind: 'clear' })}>
-                <span className="preview danger-text">Clear all documents…</span>
+              <button
+                type="button"
+                className="dropdown-item"
+                onClick={() => setPending({ kind: "clear" })}
+              >
+                <span className="preview danger-text">
+                  Clear all documents…
+                </span>
               </button>
-              {indexStatus === 'close' ? (
-                <button type="button" className="dropdown-item" onClick={() => setPending({ kind: 'open' })}>
+              {indexStatus === "close" ? (
+                <button
+                  type="button"
+                  className="dropdown-item"
+                  onClick={() => setPending({ kind: "open" })}
+                >
                   <span className="preview">Open index…</span>
                 </button>
               ) : (
-                <button type="button" className="dropdown-item" onClick={() => setPending({ kind: 'close' })}>
+                <button
+                  type="button"
+                  className="dropdown-item"
+                  onClick={() => setPending({ kind: "close" })}
+                >
                   <span className="preview">Close index…</span>
                 </button>
               )}
-              <button type="button" className="dropdown-item" onClick={() => setReindexOpen(true)}>
+              <button
+                type="button"
+                className="dropdown-item"
+                onClick={() => setReindexOpen(true)}
+              >
                 <span className="preview">Reindex…</span>
               </button>
-              <button type="button" className="dropdown-item" onClick={() => setBulkOpen(true)}>
+              <button
+                type="button"
+                className="dropdown-item"
+                onClick={() => setBulkOpen(true)}
+              >
                 <span className="preview">Bulk import…</span>
               </button>
-              <button type="button" className="dropdown-item" onClick={() => setNewDocOpen(true)}>
+              <button
+                type="button"
+                className="dropdown-item"
+                onClick={() => setNewDocOpen(true)}
+              >
                 <span className="preview">New document…</span>
               </button>
               <div className="alias-form">
@@ -258,14 +303,14 @@ export function IndexDetailView({ indexName, onBack }: Props) {
                   value={aliasInput}
                   onChange={(e) => setAliasInput(e.target.value)}
                   onKeyDown={(e) => {
-                    if (e.key === 'Enter') void submitAlias()
-                    if (e.key === 'Escape') setMenuOpen(false)
+                    if (e.key === "Enter") void submitAlias();
+                    if (e.key === "Escape") setMenuOpen(false);
                   }}
                 />
                 <button
                   className="btn btn-primary"
                   onClick={() => void submitAlias()}
-                  disabled={busy || aliasInput.trim() === ''}
+                  disabled={busy || aliasInput.trim() === ""}
                 >
                   Add
                 </button>
@@ -284,20 +329,20 @@ export function IndexDetailView({ indexName, onBack }: Props) {
           <Section title={`Documents (${totalDocs} total)`} defaultOpen>
             <div className="docs-controls">
               <div className="page-size">
-                Show{' '}
+                Show{" "}
                 <select
                   className="select-input"
                   value={pageSize}
                   onChange={(e) => {
-                    setPageSize(Number(e.target.value))
-                    setPage(0)
+                    setPageSize(Number(e.target.value));
+                    setPage(0);
                   }}
                 >
                   <option value={10}>10</option>
                   <option value={25}>25</option>
                   <option value={50}>50</option>
                   <option value={100}>100</option>
-                </select>{' '}
+                </select>{" "}
                 per page
               </div>
               <div className="pagination">
@@ -311,11 +356,13 @@ export function IndexDetailView({ indexName, onBack }: Props) {
                 <span className="page-info">
                   {totalDocs > 0
                     ? `${fromCount}–${toCount} of ${totalDocs}`
-                    : '0 results'}
+                    : "0 results"}
                 </span>
                 <button
                   className="btn btn-sm"
-                  onClick={() => setPage((p) => Math.min(totalPages - 1, p + 1))}
+                  onClick={() =>
+                    setPage((p) => Math.min(totalPages - 1, p + 1))
+                  }
                   disabled={page >= totalPages - 1 || totalDocs === 0}
                 >
                   Next →
@@ -332,20 +379,20 @@ export function IndexDetailView({ indexName, onBack }: Props) {
                         className="icon-btn"
                         title={`Copy document "${h._id}" to clipboard`}
                         onClick={(e) => {
-                          e.preventDefault()
-                          e.stopPropagation()
-                          void copyDocument(h._id, h._source)
+                          e.preventDefault();
+                          e.stopPropagation();
+                          void copyDocument(h._id, h._source);
                         }}
                       >
-                        {copiedDocId === h._id ? '✓' : '⧉'}
+                        {copiedDocId === h._id ? "✓" : "⧉"}
                       </button>
                       <button
                         className="icon-btn"
                         title={`Edit document "${h._id}"`}
                         onClick={(e) => {
-                          e.preventDefault()
-                          e.stopPropagation()
-                          setEditDoc({ docId: h._id, source: h._source })
+                          e.preventDefault();
+                          e.stopPropagation();
+                          setEditDoc({ docId: h._id, source: h._source });
                         }}
                       >
                         ✎
@@ -354,9 +401,9 @@ export function IndexDetailView({ indexName, onBack }: Props) {
                         className="icon-btn danger"
                         title={`Delete document "${h._id}"`}
                         onClick={(e) => {
-                          e.preventDefault()
-                          e.stopPropagation()
-                          setPending({ kind: 'delete-doc', docId: h._id })
+                          e.preventDefault();
+                          e.stopPropagation();
+                          setPending({ kind: "delete-doc", docId: h._id });
                         }}
                       >
                         ✕
@@ -369,7 +416,9 @@ export function IndexDetailView({ indexName, onBack }: Props) {
                 </details>
               ))
             ) : (
-              <div className="muted">No sample documents (or the index is closed).</div>
+              <div className="muted">
+                No sample documents (or the index is closed).
+              </div>
             )}
           </Section>
 
@@ -382,7 +431,9 @@ export function IndexDetailView({ indexName, onBack }: Props) {
                     <button
                       className="icon-btn"
                       title={`Remove alias "${alias}"`}
-                      onClick={() => setPending({ kind: 'remove-alias', alias })}
+                      onClick={() =>
+                        setPending({ kind: "remove-alias", alias })
+                      }
                     >
                       ✕
                     </button>
@@ -408,12 +459,13 @@ export function IndexDetailView({ indexName, onBack }: Props) {
         </>
       )}
 
-      {pending?.kind === 'delete' && (
+      {pending?.kind === "delete" && (
         <ConfirmDialog
           title="Delete index"
           message={
             <>
-              Delete index <span className="mono">{indexName}</span>? This cannot be undone.
+              Delete index <span className="mono">{indexName}</span>? This
+              cannot be undone.
             </>
           }
           confirmLabel="Delete"
@@ -423,13 +475,14 @@ export function IndexDetailView({ indexName, onBack }: Props) {
         />
       )}
 
-      {pending?.kind === 'clear' && (
+      {pending?.kind === "clear" && (
         <ConfirmDialog
           title="Clear all documents"
           message={
             <>
-              Clear all documents from index <span className="mono">{indexName}</span>? The index
-              itself and its mappings/settings will be preserved.
+              Clear all documents from index{" "}
+              <span className="mono">{indexName}</span>? The index itself and
+              its mappings/settings will be preserved.
             </>
           }
           confirmLabel="Clear"
@@ -439,13 +492,14 @@ export function IndexDetailView({ indexName, onBack }: Props) {
         />
       )}
 
-      {pending?.kind === 'delete-doc' && (
+      {pending?.kind === "delete-doc" && (
         <ConfirmDialog
           title="Delete document"
           message={
             <>
-              Delete document <span className="mono">{pending.docId}</span> from index{' '}
-              <span className="mono">{indexName}</span>? This cannot be undone.
+              Delete document <span className="mono">{pending.docId}</span> from
+              index <span className="mono">{indexName}</span>? This cannot be
+              undone.
             </>
           }
           confirmLabel="Delete"
@@ -455,13 +509,13 @@ export function IndexDetailView({ indexName, onBack }: Props) {
         />
       )}
 
-      {pending?.kind === 'open' && (
+      {pending?.kind === "open" && (
         <ConfirmDialog
           title="Open index"
           message={
             <>
-              Open index <span className="mono">{indexName}</span>? It will become available for
-              reads and writes again.
+              Open index <span className="mono">{indexName}</span>? It will
+              become available for reads and writes again.
             </>
           }
           confirmLabel="Open"
@@ -470,13 +524,13 @@ export function IndexDetailView({ indexName, onBack }: Props) {
         />
       )}
 
-      {pending?.kind === 'close' && (
+      {pending?.kind === "close" && (
         <ConfirmDialog
           title="Close index"
           message={
             <>
-              Close index <span className="mono">{indexName}</span>? It will become unavailable for
-              reads and writes until opened again.
+              Close index <span className="mono">{indexName}</span>? It will
+              become unavailable for reads and writes until opened again.
             </>
           }
           confirmLabel="Close"
@@ -485,13 +539,13 @@ export function IndexDetailView({ indexName, onBack }: Props) {
         />
       )}
 
-      {pending?.kind === 'remove-alias' && (
+      {pending?.kind === "remove-alias" && (
         <ConfirmDialog
           title="Remove alias"
           message={
             <>
-              Remove alias <span className="mono">{pending.alias}</span> from index{' '}
-              <span className="mono">{indexName}</span>?
+              Remove alias <span className="mono">{pending.alias}</span> from
+              index <span className="mono">{indexName}</span>?
             </>
           }
           confirmLabel="Remove"
@@ -505,9 +559,9 @@ export function IndexDetailView({ indexName, onBack }: Props) {
           connectionId={activeId}
           sourceIndex={indexName}
           onClose={() => {
-            setReindexOpen(false)
-            reload()
-            void refreshCluster()
+            setReindexOpen(false);
+            reload();
+            void refreshCluster();
           }}
         />
       )}
@@ -520,8 +574,8 @@ export function IndexDetailView({ indexName, onBack }: Props) {
           initialSource={editDoc.source}
           onClose={() => setEditDoc(null)}
           onSaved={() => {
-            reload()
-            void refreshCluster()
+            reload();
+            void refreshCluster();
           }}
         />
       )}
@@ -533,8 +587,8 @@ export function IndexDetailView({ indexName, onBack }: Props) {
           docId={null}
           onClose={() => setNewDocOpen(false)}
           onSaved={() => {
-            reload()
-            void refreshCluster()
+            reload();
+            void refreshCluster();
           }}
         />
       )}
@@ -545,11 +599,11 @@ export function IndexDetailView({ indexName, onBack }: Props) {
           indexName={indexName}
           onClose={() => setBulkOpen(false)}
           onImported={() => {
-            reload()
-            void refreshCluster()
+            reload();
+            void refreshCluster();
           }}
         />
       )}
     </div>
-  )
+  );
 }

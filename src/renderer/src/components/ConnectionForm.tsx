@@ -1,97 +1,107 @@
-import { useState } from 'react'
-import type { SaveConnectionInput } from '../../../shared/ipc'
+import { useState } from "react";
+import type { SaveConnectionInput } from "../../../shared/ipc";
 import type {
   AuthConfig,
   ClusterFlavor,
   StoredConnection,
-} from '../../../shared/types'
-import { api, errorMessage } from '../api'
-import { addToast } from '../toasts'
-import { useApp } from '../store'
+} from "../../../shared/types";
+import { api, errorMessage } from "../api";
+import { addToast } from "../toasts";
+import { useApp } from "../store";
 
 interface Props {
-  connection: StoredConnection | null
+  connection: StoredConnection | null;
 }
 
-const DEFAULT_DRAFT: Omit<SaveConnectionInput, 'id'> = {
-  name: '',
-  url: 'http://localhost:9200',
-  flavor: 'opensearch',
-  auth: { kind: 'basic', username: 'admin', password: '' },
+const DEFAULT_DRAFT: Omit<SaveConnectionInput, "id"> = {
+  name: "",
+  url: "http://localhost:9200",
+  flavor: "opensearch",
+  auth: { kind: "basic", username: "admin", password: "" },
   tlsVerify: true,
   timeoutMs: 10_000,
-}
+};
 
 function toDraft(c: StoredConnection | null): SaveConnectionInput {
-  if (!c) return { ...DEFAULT_DRAFT, auth: { ...DEFAULT_DRAFT.auth } }
-  const { createdAt: _ct, updatedAt: _ut, ...rest } = c
-  return { ...rest, auth: { ...c.auth } }
+  if (!c) return { ...DEFAULT_DRAFT, auth: { ...DEFAULT_DRAFT.auth } };
+  const { createdAt: _ct, updatedAt: _ut, ...rest } = c;
+  return { ...rest, auth: { ...c.auth } };
 }
 
-function emptyAuth(kind: AuthConfig['kind'], prev: AuthConfig): AuthConfig {
-  const p = prev as Record<string, unknown>
+function emptyAuth(kind: AuthConfig["kind"], prev: AuthConfig): AuthConfig {
+  const p = prev as Record<string, unknown>;
   switch (kind) {
-    case 'none':
-      return { kind }
-    case 'basic':
-      return { kind, username: String(p.username ?? ''), password: String(p.password ?? '') }
-    case 'bearer':
-      return { kind, token: String(p.token ?? '') }
-    case 'aws':
+    case "none":
+      return { kind };
+    case "basic":
       return {
         kind,
-        accessKeyId: String(p.accessKeyId ?? ''),
-        secretAccessKey: String(p.secretAccessKey ?? ''),
-        sessionToken: String(p.sessionToken ?? ''),
-        region: String(p.region ?? 'us-east-1'),
-        service: String(p.service ?? 'es'),
-      }
+        username: String(p.username ?? ""),
+        password: String(p.password ?? ""),
+      };
+    case "bearer":
+      return { kind, token: String(p.token ?? "") };
+    case "aws":
+      return {
+        kind,
+        accessKeyId: String(p.accessKeyId ?? ""),
+        secretAccessKey: String(p.secretAccessKey ?? ""),
+        sessionToken: String(p.sessionToken ?? ""),
+        region: String(p.region ?? "us-east-1"),
+        service: String(p.service ?? "es"),
+      };
   }
 }
 
 export function ConnectionForm({ connection }: Props) {
-  const close = useApp((s) => s.closeEditor)
-  const save = useApp((s) => s.saveConnection)
+  const close = useApp((s) => s.closeEditor);
+  const save = useApp((s) => s.saveConnection);
 
-  const [draft, setDraft] = useState<SaveConnectionInput>(() => toDraft(connection))
-  const [testing, setTesting] = useState(false)
-  const [saving, setSaving] = useState(false)
-  const [error, setError] = useState<string | null>(null)
+  const [draft, setDraft] = useState<SaveConnectionInput>(() =>
+    toDraft(connection),
+  );
+  const [testing, setTesting] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
-  const patch = (p: Partial<SaveConnectionInput>) => setDraft((d) => ({ ...d, ...p }))
+  const patch = (p: Partial<SaveConnectionInput>) =>
+    setDraft((d) => ({ ...d, ...p }));
   const patchAuth = (p: Partial<AuthConfig>) =>
-    setDraft((d) => ({ ...d, auth: { ...d.auth, ...p } as AuthConfig }))
+    setDraft((d) => ({ ...d, auth: { ...d.auth, ...p } as AuthConfig }));
 
-  const auth = draft.auth
+  const auth = draft.auth;
 
   async function test(): Promise<void> {
-    setTesting(true)
+    setTesting(true);
     try {
-      const info = await api.testConnection(draft)
-      addToast(`OK — ${info.distribution} ${info.version} (${info.clusterName})`, 'success')
+      const info = await api.testConnection(draft);
+      addToast(
+        `OK — ${info.distribution} ${info.version} (${info.clusterName})`,
+        "success",
+      );
     } catch (e) {
-      addToast(`Failed: ${errorMessage(e)}`, 'error')
+      addToast(`Failed: ${errorMessage(e)}`, "error");
     } finally {
-      setTesting(false)
+      setTesting(false);
     }
   }
 
   async function submit(): Promise<void> {
-    if (!draft.name.trim()) return setError('Name is required')
+    if (!draft.name.trim()) return setError("Name is required");
     try {
-      new URL(draft.url)
+      new URL(draft.url);
     } catch {
-      return setError('URL is invalid (expected e.g. https://localhost:9200)')
+      return setError("URL is invalid (expected e.g. https://localhost:9200)");
     }
-    setSaving(true)
-    setError(null)
+    setSaving(true);
+    setError(null);
     try {
-      await save(draft)
-      close()
+      await save(draft);
+      close();
     } catch (e) {
-      setError(errorMessage(e))
+      setError(errorMessage(e));
     } finally {
-      setSaving(false)
+      setSaving(false);
     }
   }
 
@@ -99,11 +109,11 @@ export function ConnectionForm({ connection }: Props) {
     <div
       className="modal-backdrop"
       onMouseDown={(e) => {
-        if (e.target === e.currentTarget) close()
+        if (e.target === e.currentTarget) close();
       }}
     >
       <div className="modal">
-        <h2>{connection ? 'Edit connection' : 'New connection'}</h2>
+        <h2>{connection ? "Edit connection" : "New connection"}</h2>
 
         <div className="field-row">
           <label className="field">
@@ -133,7 +143,9 @@ export function ConnectionForm({ connection }: Props) {
             <select
               className="input"
               value={draft.flavor}
-              onChange={(e) => patch({ flavor: e.target.value as ClusterFlavor })}
+              onChange={(e) =>
+                patch({ flavor: e.target.value as ClusterFlavor })
+              }
             >
               <option value="opensearch">OpenSearch</option>
               <option value="elasticsearch">Elasticsearch</option>
@@ -144,7 +156,11 @@ export function ConnectionForm({ connection }: Props) {
             <select
               className="input"
               value={auth.kind}
-              onChange={(e) => patch({ auth: emptyAuth(e.target.value as AuthConfig['kind'], auth) })}
+              onChange={(e) =>
+                patch({
+                  auth: emptyAuth(e.target.value as AuthConfig["kind"], auth),
+                })
+              }
             >
               <option value="basic">Basic</option>
               <option value="bearer">API key / Bearer</option>
@@ -154,7 +170,7 @@ export function ConnectionForm({ connection }: Props) {
           </label>
         </div>
 
-        {auth.kind === 'basic' && (
+        {auth.kind === "basic" && (
           <div className="field-row">
             <label className="field">
               <span>Username</span>
@@ -176,7 +192,7 @@ export function ConnectionForm({ connection }: Props) {
           </div>
         )}
 
-        {auth.kind === 'bearer' && (
+        {auth.kind === "bearer" && (
           <label className="field">
             <span>API key / token (sent as: Bearer …)</span>
             <input
@@ -188,7 +204,7 @@ export function ConnectionForm({ connection }: Props) {
           </label>
         )}
 
-        {auth.kind === 'aws' && (
+        {auth.kind === "aws" && (
           <>
             <div className="field-row">
               <label className="field">
@@ -205,7 +221,9 @@ export function ConnectionForm({ connection }: Props) {
                   className="input mono"
                   type="password"
                   value={auth.secretAccessKey}
-                  onChange={(e) => patchAuth({ secretAccessKey: e.target.value })}
+                  onChange={(e) =>
+                    patchAuth({ secretAccessKey: e.target.value })
+                  }
                 />
               </label>
             </div>
@@ -215,7 +233,7 @@ export function ConnectionForm({ connection }: Props) {
                 <input
                   className="input mono"
                   type="password"
-                  value={auth.sessionToken ?? ''}
+                  value={auth.sessionToken ?? ""}
                   onChange={(e) => patchAuth({ sessionToken: e.target.value })}
                 />
               </label>
@@ -232,7 +250,7 @@ export function ConnectionForm({ connection }: Props) {
                 <span>Service</span>
                 <select
                   className="input"
-                  value={auth.service ?? 'es'}
+                  value={auth.service ?? "es"}
                   onChange={(e) => patchAuth({ service: e.target.value })}
                 >
                   <option value="es">es (managed)</option>
@@ -260,27 +278,36 @@ export function ConnectionForm({ connection }: Props) {
               min={1000}
               step={1000}
               value={draft.timeoutMs}
-              onChange={(e) => patch({ timeoutMs: Number(e.target.value) || 10_000 })}
+              onChange={(e) =>
+                patch({ timeoutMs: Number(e.target.value) || 10_000 })
+              }
             />
           </label>
         </div>
 
-
         {error && <div className="banner banner-error">{error}</div>}
 
         <div className="modal-footer">
-          <button className="btn" onClick={() => void test()} disabled={testing}>
-            {testing ? 'Testing…' : 'Test'}
+          <button
+            className="btn"
+            onClick={() => void test()}
+            disabled={testing}
+          >
+            {testing ? "Testing…" : "Test"}
           </button>
           <div className="spacer" />
           <button className="btn" onClick={close}>
             Cancel
           </button>
-          <button className="btn btn-primary" onClick={() => void submit()} disabled={saving}>
-            {saving ? 'Saving…' : 'Save'}
+          <button
+            className="btn btn-primary"
+            onClick={() => void submit()}
+            disabled={saving}
+          >
+            {saving ? "Saving…" : "Save"}
           </button>
         </div>
       </div>
     </div>
-  )
+  );
 }

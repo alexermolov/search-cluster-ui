@@ -1,5 +1,5 @@
-import { useEffect } from 'react'
-import { useApp } from './store'
+import { useEffect } from "react";
+import { useApp } from "./store";
 
 /**
  * Global hotkeys:
@@ -8,21 +8,21 @@ import { useApp } from './store'
  *    from doing a full reload, which would reset app state)
  */
 export function useHotkeys(): void {
-  const setPaletteOpen = useApp((s) => s.setPaletteOpen)
-  const refresh = useApp((s) => s.refreshCluster)
+  const setPaletteOpen = useApp((s) => s.setPaletteOpen);
+  const refresh = useApp((s) => s.refreshCluster);
 
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
-      const mod = e.ctrlKey || e.metaKey
-      if (mod && e.key.toLowerCase() === 'k') {
-        e.preventDefault()
-        setPaletteOpen(true)
-      } else if ((mod && e.key.toLowerCase() === 'r') || e.key === 'F5') {
-        e.preventDefault()
-        void refresh()
+      const mod = e.ctrlKey || e.metaKey;
+      if (mod && e.key.toLowerCase() === "k") {
+        e.preventDefault();
+        setPaletteOpen(true);
+      } else if ((mod && e.key.toLowerCase() === "r") || e.key === "F5") {
+        e.preventDefault();
+        void refresh();
       }
-    }
-    window.addEventListener('keydown', onKeyDown)
-    return () => window.removeEventListener('keydown', onKeyDown)
-  }, [setPaletteOpen, refresh])
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [setPaletteOpen, refresh]);
 }

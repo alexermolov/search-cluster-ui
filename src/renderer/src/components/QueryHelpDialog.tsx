@@ -1,18 +1,18 @@
-import { useCallback } from 'react'
-import ReactMarkdown from 'react-markdown'
-import helpContent from '../assets/query-help.md?raw'
+import { useCallback } from "react";
+import ReactMarkdown from "react-markdown";
+import helpContent from "../assets/query-help.md?raw";
 
 interface Props {
-  onClose: () => void
+  onClose: () => void;
 }
 
 export function QueryHelpDialog({ onClose }: Props) {
   const handleBackdropClick = useCallback(
     (e: React.MouseEvent<HTMLDivElement>) => {
-      if (e.target === e.currentTarget) onClose()
+      if (e.target === e.currentTarget) onClose();
     },
     [onClose],
-  )
+  );
 
   return (
     <div className="modal-backdrop" onMouseDown={handleBackdropClick}>
@@ -29,5 +29,5 @@ export function QueryHelpDialog({ onClose }: Props) {
         </div>
       </div>
     </div>
-  )
+  );
 }

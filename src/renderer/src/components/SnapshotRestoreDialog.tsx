@@ -1,14 +1,14 @@
-import { useState } from 'react'
-import { api, errorMessage } from '../api'
-import { JsonEditor } from './JsonEditor'
-import { JsonView } from './JsonView'
+import { useState } from "react";
+import { api, errorMessage } from "../api";
+import { JsonEditor } from "./JsonEditor";
+import { JsonView } from "./JsonView";
 
 interface Props {
-  connectionId: string
-  repository: string
-  snapshot: string
-  onClose: () => void
-  onRestored: () => void
+  connectionId: string;
+  repository: string;
+  snapshot: string;
+  onClose: () => void;
+  onRestored: () => void;
 }
 
 /**
@@ -22,56 +22,62 @@ export function SnapshotRestoreDialog({
   onClose,
   onRestored,
 }: Props) {
-  const [renamePattern, setRenamePattern] = useState('')
-  const [renameReplacement, setRenameReplacement] = useState('')
-  const [includeGlobalState, setIncludeGlobalState] = useState(true)
-  const [advanced, setAdvanced] = useState('')
-  const [running, setRunning] = useState(false)
-  const [error, setError] = useState<string | null>(null)
-  const [result, setResult] = useState<Record<string, unknown> | null>(null)
+  const [renamePattern, setRenamePattern] = useState("");
+  const [renameReplacement, setRenameReplacement] = useState("");
+  const [includeGlobalState, setIncludeGlobalState] = useState(true);
+  const [advanced, setAdvanced] = useState("");
+  const [running, setRunning] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [result, setResult] = useState<Record<string, unknown> | null>(null);
 
   async function run(): Promise<void> {
-    let parsed: Record<string, unknown> | null = null
-    const text = advanced.trim()
-    if (text !== '') {
+    let parsed: Record<string, unknown> | null = null;
+    const text = advanced.trim();
+    if (text !== "") {
       try {
-        const v: unknown = JSON.parse(text)
-        if (v === null || typeof v !== 'object' || Array.isArray(v)) {
-          setError('Advanced JSON must be an object, e.g. {"indices": ["logs-*"]}')
-          return
+        const v: unknown = JSON.parse(text);
+        if (v === null || typeof v !== "object" || Array.isArray(v)) {
+          setError(
+            'Advanced JSON must be an object, e.g. {"indices": ["logs-*"]}',
+          );
+          return;
         }
-        parsed = v as Record<string, unknown>
+        parsed = v as Record<string, unknown>;
       } catch {
-        setError('Advanced JSON is not valid JSON')
-        return
+        setError("Advanced JSON is not valid JSON");
+        return;
       }
     }
 
-    const body: Record<string, unknown> = { ...(parsed ?? {}) }
-    if (renamePattern.trim() !== '') body.rename_pattern = renamePattern.trim()
-    if (renameReplacement.trim() !== '') body.rename_replacement = renameReplacement.trim()
-    body.include_global_state = includeGlobalState
+    const body: Record<string, unknown> = { ...(parsed ?? {}) };
+    if (renamePattern.trim() !== "") body.rename_pattern = renamePattern.trim();
+    if (renameReplacement.trim() !== "")
+      body.rename_replacement = renameReplacement.trim();
+    body.include_global_state = includeGlobalState;
 
-    setRunning(true)
-    setError(null)
-    setResult(null)
+    setRunning(true);
+    setError(null);
+    setResult(null);
     try {
       const res = await api.restoreSnapshot(connectionId, {
         repository,
         snapshot,
         body,
-      })
-      setResult(res)
-      onRestored()
+      });
+      setResult(res);
+      onRestored();
     } catch (e) {
-      setError(errorMessage(e))
+      setError(errorMessage(e));
     } finally {
-      setRunning(false)
+      setRunning(false);
     }
   }
 
   return (
-    <div className="modal-backdrop" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
+    <div
+      className="modal-backdrop"
+      onMouseDown={(e) => e.target === e.currentTarget && onClose()}
+    >
       <div className="modal snapshot-modal">
         <h2>
           Restore snapshot <span className="mono">{snapshot}</span>
@@ -135,13 +141,17 @@ export function SnapshotRestoreDialog({
         <div className="modal-footer">
           <span className="spacer" />
           <button className="btn" onClick={onClose} disabled={running}>
-            {result ? 'Close' : 'Cancel'}
+            {result ? "Close" : "Cancel"}
           </button>
-          <button className="btn btn-primary" onClick={() => void run()} disabled={running}>
-            {running ? 'Restoring…' : 'Restore'}
+          <button
+            className="btn btn-primary"
+            onClick={() => void run()}
+            disabled={running}
+          >
+            {running ? "Restoring…" : "Restore"}
           </button>
         </div>
       </div>
     </div>
-  )
+  );
 }

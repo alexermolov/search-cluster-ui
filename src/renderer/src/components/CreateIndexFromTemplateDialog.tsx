@@ -1,22 +1,26 @@
-import { useState } from 'react'
-import { api, errorMessage } from '../api'
-import { addToast } from '../toasts'
-import { JsonEditor } from './JsonEditor'
-import { JsonView } from './JsonView'
+import { useState } from "react";
+import { api, errorMessage } from "../api";
+import { addToast } from "../toasts";
+import { JsonEditor } from "./JsonEditor";
+import { JsonView } from "./JsonView";
 
 interface Props {
-  connectionId: string
-  templateName: string
-  onClose: () => void
+  connectionId: string;
+  templateName: string;
+  onClose: () => void;
   /** Called after the index was created successfully. */
-  onCreated: () => void
+  onCreated: () => void;
 }
 
 /** Index names must be lowercase and free of these characters. */
-const INVALID_INDEX_CHARS = /[\\/*?"<>| ,#]/
+const INVALID_INDEX_CHARS = /[\\/*?"<>| ,#]/;
 
 function validIndexName(name: string): boolean {
-  return name !== '' && name === name.toLowerCase() && !INVALID_INDEX_CHARS.test(name)
+  return (
+    name !== "" &&
+    name === name.toLowerCase() &&
+    !INVALID_INDEX_CHARS.test(name)
+  );
 }
 
 /**
@@ -24,77 +28,93 @@ function validIndexName(name: string): boolean {
  * template automatically; optional JSON overrides are merged into the
  * top-level PUT body. Preview runs _simulate_index for the template.
  */
-export function CreateIndexFromTemplateDialog({ connectionId, templateName, onClose, onCreated }: Props) {
-  const [indexName, setIndexName] = useState('')
-  const [overrides, setOverrides] = useState('')
-  const [preview, setPreview] = useState<Record<string, unknown> | null>(null)
-  const [running, setRunning] = useState(false)
-  const [previewing, setPreviewing] = useState(false)
-  const [error, setError] = useState<string | null>(null)
+export function CreateIndexFromTemplateDialog({
+  connectionId,
+  templateName,
+  onClose,
+  onCreated,
+}: Props) {
+  const [indexName, setIndexName] = useState("");
+  const [overrides, setOverrides] = useState("");
+  const [preview, setPreview] = useState<Record<string, unknown> | null>(null);
+  const [running, setRunning] = useState(false);
+  const [previewing, setPreviewing] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
-  function parseOverrides(): Record<string, unknown> | null | 'invalid' {
-    const text = overrides.trim()
-    if (text === '') return null
+  function parseOverrides(): Record<string, unknown> | null | "invalid" {
+    const text = overrides.trim();
+    if (text === "") return null;
     try {
-      const v: unknown = JSON.parse(text)
-      if (v === null) return null
-      if (typeof v !== 'object' || Array.isArray(v)) return 'invalid'
-      return v as Record<string, unknown>
+      const v: unknown = JSON.parse(text);
+      if (v === null) return null;
+      if (typeof v !== "object" || Array.isArray(v)) return "invalid";
+      return v as Record<string, unknown>;
     } catch {
-      return 'invalid'
+      return "invalid";
     }
   }
 
   async function runPreview(): Promise<void> {
-    const name = indexName.trim()
+    const name = indexName.trim();
     if (!validIndexName(name)) {
-      setError('Index name must be lowercase and free of \\ / * ? " < > | space , #')
-      return
+      setError(
+        'Index name must be lowercase and free of \\ / * ? " < > | space , #',
+      );
+      return;
     }
-    const parsed = parseOverrides()
-    if (parsed === 'invalid') {
-      setError('Overrides must be a JSON object, e.g. {"aliases": {...}}')
-      return
+    const parsed = parseOverrides();
+    if (parsed === "invalid") {
+      setError('Overrides must be a JSON object, e.g. {"aliases": {...}}');
+      return;
     }
-    setPreviewing(true)
-    setError(null)
+    setPreviewing(true);
+    setError(null);
     try {
-      const res = await api.simulateIndexTemplate(connectionId, templateName, name)
-      setPreview(res)
+      const res = await api.simulateIndexTemplate(
+        connectionId,
+        templateName,
+        name,
+      );
+      setPreview(res);
     } catch (e) {
-      setError(errorMessage(e))
+      setError(errorMessage(e));
     } finally {
-      setPreviewing(false)
+      setPreviewing(false);
     }
   }
 
   async function runCreate(): Promise<void> {
-    const name = indexName.trim()
+    const name = indexName.trim();
     if (!validIndexName(name)) {
-      setError('Index name must be lowercase and free of \\ / * ? " < > | space , #')
-      return
+      setError(
+        'Index name must be lowercase and free of \\ / * ? " < > | space , #',
+      );
+      return;
     }
-    const parsed = parseOverrides()
-    if (parsed === 'invalid') {
-      setError('Overrides must be a JSON object, e.g. {"aliases": {...}}')
-      return
+    const parsed = parseOverrides();
+    if (parsed === "invalid") {
+      setError('Overrides must be a JSON object, e.g. {"aliases": {...}}');
+      return;
     }
-    setRunning(true)
-    setError(null)
+    setRunning(true);
+    setError(null);
     try {
-      await api.createIndexFromTemplate(connectionId, name, parsed)
-      addToast('Index created', 'success')
-      onCreated()
-      window.setTimeout(onClose, 600)
+      await api.createIndexFromTemplate(connectionId, name, parsed);
+      addToast("Index created", "success");
+      onCreated();
+      window.setTimeout(onClose, 600);
     } catch (e) {
-      setError(errorMessage(e))
+      setError(errorMessage(e));
     } finally {
-      setRunning(false)
+      setRunning(false);
     }
   }
 
   return (
-    <div className="modal-backdrop" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
+    <div
+      className="modal-backdrop"
+      onMouseDown={(e) => e.target === e.currentTarget && onClose()}
+    >
       <div className="modal create-index-modal">
         <h2>Create index from template "{templateName}"</h2>
 
@@ -107,8 +127,8 @@ export function CreateIndexFromTemplateDialog({ connectionId, templateName, onCl
             value={indexName}
             onChange={(e) => setIndexName(e.target.value)}
             onKeyDown={(e) => {
-              if (e.key === 'Enter') void runCreate()
-              if (e.key === 'Escape') onClose()
+              if (e.key === "Enter") void runCreate();
+              if (e.key === "Escape") onClose();
             }}
           />
         </div>
@@ -139,14 +159,22 @@ export function CreateIndexFromTemplateDialog({ connectionId, templateName, onCl
           <button className="btn" onClick={onClose} disabled={running}>
             Cancel
           </button>
-          <button className="btn" onClick={() => void runPreview()} disabled={previewing || running}>
-            {previewing ? 'Previewing…' : 'Preview'}
+          <button
+            className="btn"
+            onClick={() => void runPreview()}
+            disabled={previewing || running}
+          >
+            {previewing ? "Previewing…" : "Preview"}
           </button>
-          <button className="btn btn-primary" onClick={() => void runCreate()} disabled={running}>
-            {running ? 'Creating…' : 'Create index'}
+          <button
+            className="btn btn-primary"
+            onClick={() => void runCreate()}
+            disabled={running}
+          >
+            {running ? "Creating…" : "Create index"}
           </button>
         </div>
       </div>
     </div>
-  )
+  );
 }

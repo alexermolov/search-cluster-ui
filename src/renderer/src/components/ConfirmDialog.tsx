@@ -1,12 +1,12 @@
-import { useEffect, type ReactNode } from 'react'
+import { useEffect, type ReactNode } from "react";
 
 interface Props {
-  title: string
-  message: ReactNode
-  confirmLabel?: string
-  danger?: boolean
-  onConfirm: () => void
-  onCancel: () => void
+  title: string;
+  message: ReactNode;
+  confirmLabel?: string;
+  danger?: boolean;
+  onConfirm: () => void;
+  onCancel: () => void;
 }
 
 /**
@@ -15,25 +15,25 @@ interface Props {
 export function ConfirmDialog({
   title,
   message,
-  confirmLabel = 'Confirm',
+  confirmLabel = "Confirm",
   danger = false,
   onConfirm,
   onCancel,
 }: Props) {
   useEffect(() => {
     function onKeyDown(e: KeyboardEvent): void {
-      if (e.key === 'Escape') onCancel()
-      if (e.key === 'Enter') onConfirm()
+      if (e.key === "Escape") onCancel();
+      if (e.key === "Enter") onConfirm();
     }
-    document.addEventListener('keydown', onKeyDown)
-    return () => document.removeEventListener('keydown', onKeyDown)
-  }, [onCancel, onConfirm])
+    document.addEventListener("keydown", onKeyDown);
+    return () => document.removeEventListener("keydown", onKeyDown);
+  }, [onCancel, onConfirm]);
 
   return (
     <div
       className="modal-backdrop"
       onMouseDown={(e) => {
-        if (e.target === e.currentTarget) onCancel()
+        if (e.target === e.currentTarget) onCancel();
       }}
     >
       <div className="modal confirm-modal">
@@ -45,7 +45,7 @@ export function ConfirmDialog({
             Cancel
           </button>
           <button
-            className={danger ? 'btn btn-danger' : 'btn btn-primary'}
+            className={danger ? "btn btn-danger" : "btn btn-primary"}
             onClick={onConfirm}
           >
             {confirmLabel}
@@ -53,5 +53,5 @@ export function ConfirmDialog({
         </div>
       </div>
     </div>
-  )
+  );
 }
