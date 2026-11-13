@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
+import { useApp } from "../store";
 import { QueryTabView } from "./QueryTabView";
 import { QueryHelpDialog } from "./QueryHelpDialog";
 
@@ -22,6 +23,8 @@ function newTab(): QueryTabState {
  * Hotkeys: Ctrl+Alt+T — new tab, Ctrl+Alt+W — close the current tab.
  */
 export function QueryPanel() {
+  const queryIndexRequest = useApp((s) => s.queryIndexRequest);
+  const clearQueryIndexRequest = useApp((s) => s.clearQueryIndexRequest);
   const [tabs, setTabs] = useState<QueryTabState[]>(() => [newTab()]);
   const [activeTabId, setActiveTabId] = useState<string>(() => tabs[0].id);
   const [helpOpen, setHelpOpen] = useState(false);
@@ -115,7 +118,12 @@ export function QueryPanel() {
           key={t.id}
           className={t.id === activeTabId ? "qtab-panel" : "qtab-panel hidden"}
         >
-          <QueryTabView tabId={t.id} onTitle={onTitle} />
+          <QueryTabView
+            tabId={t.id}
+            onTitle={onTitle}
+            indexRequest={t.id === activeTabId ? queryIndexRequest : null}
+            onIndexRequestHandled={clearQueryIndexRequest}
+          />
         </div>
       ))}
       {helpOpen && <QueryHelpDialog onClose={() => setHelpOpen(false)} />}

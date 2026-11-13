@@ -44,6 +44,7 @@ export function IndexDetailView({ indexName, onBack }: Props) {
   const refreshCluster = useApp((s) => s.refreshCluster);
   const reloadTick = useApp((s) => s.indexReloadTick);
   const reloadIndexDetail = useApp((s) => s.reloadIndexDetail);
+  const openQueryForIndex = useApp((s) => s.openQueryForIndex);
 
   const [detail, setDetail] = useState<IndexDetail | null>(null);
   const [docs, setDocs] = useState<SearchResults | null>(null);
@@ -232,6 +233,13 @@ export function IndexDetailView({ indexName, onBack }: Props) {
           ← Back to indices
         </button>
         <h2 className="mono">{indexName}</h2>
+        <button
+          className="btn btn-primary"
+          onClick={() => openQueryForIndex(indexName)}
+          title="Open this index in Query"
+        >
+          Query
+        </button>
         <div className="dropdown-wrap">
           <button
             className="btn"

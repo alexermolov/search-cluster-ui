@@ -58,6 +58,8 @@ interface AppStore {
   filter: string;
   /** null — index list shown; otherwise the index opened in the fullscreen view. */
   selectedIndex: string | null;
+  /** One-shot request to open Query with a specific index selected. */
+  queryIndexRequest: { id: number; index: string } | null;
   /** Incremented to trigger a reload of the open index detail view. */
   indexReloadTick: number;
   loadingCluster: boolean;
@@ -81,6 +83,8 @@ interface AppStore {
   setFilter(filter: string): void;
   openIndex(name: string): void;
   closeIndex(): void;
+  openQueryForIndex(name: string): void;
+  clearQueryIndexRequest(id: number): void;
   openEditor(connection?: StoredConnection): void;
   closeEditor(): void;
   saveConnection(input: SaveConnectionInput): Promise<void>;
@@ -103,6 +107,7 @@ async function loadCluster(
 }
 
 let requestSeq = 0;
+let queryIndexRequestSeq = 0;
 
 export const useApp = create<AppStore>((set, get) => {
   /** RequestId of the in-flight foreground cluster load; cancelled on switch/refresh. */
@@ -128,6 +133,7 @@ export const useApp = create<AppStore>((set, get) => {
     indices: [],
     filter: "",
     selectedIndex: null,
+    queryIndexRequest: null,
     indexReloadTick: 0,
     loadingCluster: false,
     error: null,
@@ -225,6 +231,17 @@ export const useApp = create<AppStore>((set, get) => {
 
     openIndex: (name) => set({ selectedIndex: name }),
     closeIndex: () => set({ selectedIndex: null }),
+    openQueryForIndex: (index) =>
+      set({
+        tab: "query",
+        selectedIndex: null,
+        queryIndexRequest: { id: ++queryIndexRequestSeq, index },
+      }),
+    clearQueryIndexRequest: (id) => {
+      if (get().queryIndexRequest?.id === id) {
+        set({ queryIndexRequest: null });
+      }
+    },
 
     openEditor: (connection) =>
       set({ editor: { connection: connection ?? null } }),

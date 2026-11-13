@@ -129,6 +129,8 @@ interface Props {
   tabId: string;
   /** Report the tab title (index pattern after a run) to the tab manager. */
   onTitle: (tabId: string, title: string) => void;
+  indexRequest: { id: number; index: string } | null;
+  onIndexRequestHandled: (id: number) => void;
 }
 
 /**
@@ -136,7 +138,12 @@ interface Props {
  * manager (hidden via CSS when inactive) so background tabs keep their
  * state and in-flight requests are not interrupted.
  */
-export function QueryTabView({ tabId, onTitle }: Props) {
+export function QueryTabView({
+  tabId,
+  onTitle,
+  indexRequest,
+  onIndexRequestHandled,
+}: Props) {
   const activeId = useApp((s) => s.activeId);
   const indices = useApp((s) => s.indices);
 
@@ -194,6 +201,13 @@ export function QueryTabView({ tabId, onTitle }: Props) {
 
   const toolbarRef = useRef<HTMLDivElement | null>(null);
   const indexDropdownRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    if (!indexRequest) return;
+    setIndex(indexRequest.index);
+    setIndexDropdownOpen(false);
+    onIndexRequestHandled(indexRequest.id);
+  }, [indexRequest, onIndexRequestHandled]);
 
   // Close index dropdown on outside click.
   useEffect(() => {
