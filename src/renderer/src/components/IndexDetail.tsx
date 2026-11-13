@@ -45,6 +45,7 @@ export function IndexDetailView({ indexName, onBack }: Props) {
   const reloadTick = useApp((s) => s.indexReloadTick);
   const reloadIndexDetail = useApp((s) => s.reloadIndexDetail);
   const openQueryForIndex = useApp((s) => s.openQueryForIndex);
+  const openQueryForField = useApp((s) => s.openQueryForField);
 
   const [detail, setDetail] = useState<IndexDetail | null>(null);
   const [docs, setDocs] = useState<SearchResults | null>(null);
@@ -419,7 +420,12 @@ export function IndexDetailView({ indexName, onBack }: Props) {
                     </span>
                   </summary>
                   <pre className="json">
-                    <JsonView value={h._source} />
+                    <JsonView
+                      value={h._source}
+                      onQuickQuery={(field, value) =>
+                        openQueryForField(indexName, field, value)
+                      }
+                    />
                   </pre>
                 </details>
               ))

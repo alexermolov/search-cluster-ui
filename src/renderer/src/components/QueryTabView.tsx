@@ -129,7 +129,7 @@ interface Props {
   tabId: string;
   /** Report the tab title (index pattern after a run) to the tab manager. */
   onTitle: (tabId: string, title: string) => void;
-  indexRequest: { id: number; index: string } | null;
+  indexRequest: { id: number; index: string; query?: string } | null;
   onIndexRequestHandled: (id: number) => void;
 }
 
@@ -146,6 +146,7 @@ export function QueryTabView({
 }: Props) {
   const activeId = useApp((s) => s.activeId);
   const indices = useApp((s) => s.indices);
+  const openQueryForField = useApp((s) => s.openQueryForField);
 
   const [index, setIndex] = useState("");
   const filteredIndices = useMemo(() => {
@@ -206,6 +207,13 @@ export function QueryTabView({
     if (!indexRequest) return;
     setIndex(indexRequest.index);
     setIndexDropdownOpen(false);
+    if (indexRequest.query !== undefined) {
+      setText(indexRequest.query);
+      setResult(null);
+      setMsearchResult(null);
+      setError(null);
+      setPage(0);
+    }
     onIndexRequestHandled(indexRequest.id);
   }, [indexRequest, onIndexRequestHandled]);
 
@@ -937,7 +945,12 @@ export function QueryTabView({
                               </button>
                             </div>
                             <pre className="json">
-                              <JsonView value={h._source} />
+                              <JsonView
+                                value={h._source}
+                                onQuickQuery={(field, value) =>
+                                  openQueryForField(h._index, field, value)
+                                }
+                              />
                             </pre>
                           </td>
                         </tr>
@@ -959,7 +972,13 @@ export function QueryTabView({
                   <span className="mono">{h._id}</span>
                 </summary>
                 <pre className="json">
-                  <JsonView value={h._source} highlights={h.highlight} />
+                  <JsonView
+                    value={h._source}
+                    highlights={h.highlight}
+                    onQuickQuery={(field, value) =>
+                      openQueryForField(h._index, field, value)
+                    }
+                  />
                 </pre>
               </details>
             ))
@@ -1082,7 +1101,12 @@ export function QueryTabView({
                                     </button>
                                   </div>
                                   <pre className="json">
-                                    <JsonView value={h._source} />
+                                    <JsonView
+                                      value={h._source}
+                                      onQuickQuery={(field, value) =>
+                                        openQueryForField(h._index, field, value)
+                                      }
+                                    />
                                   </pre>
                                 </td>
                               </tr>

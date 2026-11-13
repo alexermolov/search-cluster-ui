@@ -55,12 +55,79 @@ export function highlightJson(
 interface Props {
   value: unknown;
   highlights?: Record<string, string[]>;
+  onQuickQuery?: (field: string, value: string | number | boolean) => void;
+}
+
+interface JsonLineQuery {
+  field: string;
+  value: string | number | boolean;
+}
+
+function getLineQueries(
+  text: string,
+  excludedRootKey?: string,
+): Array<JsonLineQuery | null> {
+  const contexts: Array<{ path: string[] }> = [];
+  return text.split("\n").map((line) => {
+    const trimmed = line.trim();
+    if (!trimmed) return null;
+
+    if (trimmed.startsWith("}") || trimmed.startsWith("]")) {
+      contexts.pop();
+      return null;
+    }
+
+    const property = trimmed.match(/^("(?:[^"\\]|\\.)*")\s*:\s*(.*)$/);
+    let path: string[];
+    let rawValue: string;
+
+    if (property) {
+      const key: unknown = JSON.parse(property[1]);
+      if (typeof key !== "string") return null;
+      const parentPath = contexts[contexts.length - 1]?.path ?? [];
+      path = [...parentPath, key];
+      rawValue = property[2];
+    } else {
+      path = contexts[contexts.length - 1]?.path ?? [];
+      rawValue = trimmed;
+    }
+
+    rawValue = rawValue.replace(/,\s*$/, "");
+    if (
+      rawValue === "{" ||
+      rawValue === "[" ||
+      (rawValue.startsWith("{") && rawValue !== "{}") ||
+      (rawValue.startsWith("[") && rawValue !== "[]")
+    ) {
+      contexts.push({ path });
+      return null;
+    }
+
+    let value: unknown;
+    try {
+      value = JSON.parse(rawValue);
+    } catch {
+      return null;
+    }
+    if (
+      path.length === 0 ||
+      path[0] === excludedRootKey ||
+      value === null ||
+      (typeof value !== "string" &&
+        typeof value !== "number" &&
+        typeof value !== "boolean")
+    ) {
+      return null;
+    }
+    return { field: path.join("."), value };
+  });
 }
 
 /** Render JSON (object or pre-serialized string) with token colors. */
-export function JsonView({ value, highlights }: Props) {
+export function JsonView({ value, highlights, onQuickQuery }: Props) {
   let text: string;
   let markers: { open: string; close: string } | undefined;
+  let excludedRootKey: string | undefined;
 
   if (
     highlights != null &&
@@ -100,11 +167,47 @@ export function JsonView({ value, highlights }: Props) {
     )
       ? "_search_highlight"
       : "_highlight";
+    excludedRootKey = highlightKey;
     text =
       JSON.stringify({ ...value, [highlightKey]: highlighted }, null, 2) ?? "";
   } else {
     text =
       typeof value === "string" ? value : JSON.stringify(value, null, 2) ?? "";
+  }
+
+  if (onQuickQuery) {
+    const queries = getLineQueries(text, excludedRootKey);
+    return (
+      <>
+        {text.split("\n").map((line, index) => {
+          const query = queries[index];
+          return (
+            <span className="json-line" key={index}>
+              <span
+                className="json-line-content"
+                dangerouslySetInnerHTML={{
+                  __html: highlightJson(line, markers),
+                }}
+              />
+              {query && (
+                <button
+                  type="button"
+                  className="json-quick-query"
+                  title={`Query ${query.field} with match`}
+                  aria-label={`Query ${query.field} with match`}
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    onQuickQuery(query.field, query.value);
+                  }}
+                >
+                  ⌕
+                </button>
+              )}
+            </span>
+          );
+        })}
+      </>
+    );
   }
 
   return (

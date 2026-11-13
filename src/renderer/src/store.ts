@@ -59,7 +59,7 @@ interface AppStore {
   /** null — index list shown; otherwise the index opened in the fullscreen view. */
   selectedIndex: string | null;
   /** One-shot request to open Query with a specific index selected. */
-  queryIndexRequest: { id: number; index: string } | null;
+  queryIndexRequest: { id: number; index: string; query?: string } | null;
   /** Incremented to trigger a reload of the open index detail view. */
   indexReloadTick: number;
   loadingCluster: boolean;
@@ -83,7 +83,12 @@ interface AppStore {
   setFilter(filter: string): void;
   openIndex(name: string): void;
   closeIndex(): void;
-  openQueryForIndex(name: string): void;
+  openQueryForIndex(name: string, query?: string): void;
+  openQueryForField(
+    index: string,
+    field: string,
+    value: string | number | boolean,
+  ): void;
   clearQueryIndexRequest(id: number): void;
   openEditor(connection?: StoredConnection): void;
   closeEditor(): void;
@@ -231,12 +236,17 @@ export const useApp = create<AppStore>((set, get) => {
 
     openIndex: (name) => set({ selectedIndex: name }),
     closeIndex: () => set({ selectedIndex: null }),
-    openQueryForIndex: (index) =>
+    openQueryForIndex: (index, query) =>
       set({
         tab: "query",
         selectedIndex: null,
-        queryIndexRequest: { id: ++queryIndexRequestSeq, index },
+        queryIndexRequest: { id: ++queryIndexRequestSeq, index, query },
       }),
+    openQueryForField: (index, field, value) =>
+      get().openQueryForIndex(
+        index,
+        JSON.stringify({ query: { match: { [field]: value } } }, null, 2),
+      ),
     clearQueryIndexRequest: (id) => {
       if (get().queryIndexRequest?.id === id) {
         set({ queryIndexRequest: null });

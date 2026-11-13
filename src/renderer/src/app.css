@@ -1873,6 +1873,46 @@ textarea.input {
     user-select: text;
 }
 
+.json-line {
+    display: block;
+    position: relative;
+    min-height: 1.5em;
+    padding-right: 24px;
+}
+
+.json-line-content {
+    white-space: pre;
+}
+
+.json-quick-query {
+    position: absolute;
+    top: 0;
+    right: 0;
+    width: 20px;
+    height: 1.5em;
+    padding: 0;
+    border: 0;
+    border-radius: 3px;
+    background: var(--bg-elevated);
+    color: var(--accent);
+    font: inherit;
+    line-height: 1.5;
+    opacity: 0;
+    pointer-events: none;
+    cursor: pointer;
+}
+
+.json-line:hover .json-quick-query,
+.json-quick-query:focus-visible {
+    opacity: 1;
+    pointer-events: auto;
+}
+
+.json-quick-query:hover {
+    background: var(--accent);
+    color: #fff;
+}
+
 /* ---------- Modal ---------- */
 
 .modal-backdrop {
