@@ -1,5 +1,18 @@
 import { createHash, randomUUID } from 'node:crypto'
-import { Kafka, logLevel, type Consumer, type EachMessagePayload } from 'kafkajs'
+import {
+  Kafka,
+  logLevel,
+  type Consumer,
+  type EachMessagePayload,
+  CompressionCodecs,
+  CompressionTypes,
+} from 'kafkajs'
+import snappy from 'snappyjs'
+
+;(CompressionCodecs as any)[CompressionTypes.Snappy] = () => ({
+  compress: async (encoder: any) => Buffer.from(snappy.compress(encoder.buffer)),
+  decompress: async (buffer: Buffer) => Buffer.from(snappy.uncompress(buffer)),
+})
 import type {
   KafkaMessageProduceInput,
   KafkaMessagesInput,
