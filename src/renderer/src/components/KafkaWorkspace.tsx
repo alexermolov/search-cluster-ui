@@ -694,6 +694,7 @@ function KafkaMessageAccordion({
 }) {
   const [decodeOpen, setDecodeOpen] = useState(false);
   const [idl, setIdl] = useState("");
+  const [contractFile, setContractFile] = useState("");
   const [contractName, setContractName] = useState("");
   const [structs, setStructs] = useState<string[]>([]);
   const [parsing, setParsing] = useState(false);
@@ -740,6 +741,7 @@ function KafkaMessageAccordion({
     if (!file) return;
     try {
       setIdl(await file.text());
+      setContractFile(file.name);
       setDecodedJson(null);
       setError(null);
     } catch (reason) {
@@ -748,7 +750,7 @@ function KafkaMessageAccordion({
   }
 
   async function startDecode(): Promise<void> {
-    if (!message.valueBase64 || !idl.trim() || !contractName) return;
+    if (message.valueBase64 === null || !idl.trim() || !contractName) return;
     setDecoding(true);
     setError(null);
     setDecodedJson(null);
@@ -812,6 +814,7 @@ function KafkaMessageAccordion({
             >
               Upload Thrift contract
             </button>
+            {contractFile && <span className="muted">{contractFile}</span>}
             <label className="field kafka-thrift-struct">
               <span>Struct</span>
               <select
@@ -835,7 +838,7 @@ function KafkaMessageAccordion({
               className="btn btn-primary"
               onClick={() => void startDecode()}
               disabled={
-                !message.valueBase64 ||
+                message.valueBase64 === null ||
                 !contractName ||
                 parsing ||
                 decoding
@@ -847,7 +850,7 @@ function KafkaMessageAccordion({
           </div>
           {error && <div className="banner banner-error">{error}</div>}
           {decodedJson !== null && <KafkaJsonViewer value={decodedJson} />}
-          {!message.valueBase64 && (
+          {message.valueBase64 === null && (
             <div className="muted">This event has no binary value to decode.</div>
           )}
         </div>
