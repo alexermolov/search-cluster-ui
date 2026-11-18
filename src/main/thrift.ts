@@ -376,3 +376,251 @@ export function serializeThriftBinary(ast: ThriftAST, structName: string, data: 
   }
   return writer.finish()
 }
+
+/* ─── TBinaryProtocol reader ─── */
+
+class ThriftBinaryReader {
+  private offset = 0
+
+  constructor(private readonly buffer: Buffer) {}
+
+  private requireBytes(length: number): void {
+    if (!Number.isInteger(length) || length < 0 || this.offset + length > this.buffer.length) {
+      throw new Error('Unexpected end of Thrift message')
+    }
+  }
+
+  readByte(): number {
+    this.requireBytes(1)
+    return this.buffer.readUInt8(this.offset++)
+  }
+
+  readI8(): number {
+    this.requireBytes(1)
+    return this.buffer.readInt8(this.offset++)
+  }
+
+  readI16(): number {
+    this.requireBytes(2)
+    const value = this.buffer.readInt16BE(this.offset)
+    this.offset += 2
+    return value
+  }
+
+  readI32(): number {
+    this.requireBytes(4)
+    const value = this.buffer.readInt32BE(this.offset)
+    this.offset += 4
+    return value
+  }
+
+  readI64(): string {
+    this.requireBytes(8)
+    const value = this.buffer.readBigInt64BE(this.offset).toString()
+    this.offset += 8
+    return value
+  }
+
+  readDouble(): number {
+    this.requireBytes(8)
+    const value = this.buffer.readDoubleBE(this.offset)
+    this.offset += 8
+    return value
+  }
+
+  readString(binary: boolean): string {
+    const length = this.readI32()
+    this.requireBytes(length)
+    const bytes = this.buffer.subarray(this.offset, this.offset + length)
+    this.offset += length
+    return binary ? bytes.toString('base64') : bytes.toString('utf8')
+  }
+
+  get remaining(): number {
+    return this.buffer.length - this.offset
+  }
+}
+
+const MAX_THRIFT_COLLECTION_SIZE = 1_000_000
+const MAX_THRIFT_DEPTH = 64
+
+function assertWireType(actual: number, expected: ThriftType, ast: ThriftAST): void {
+  const expectedId = getTypeId(expected, ast)
+  if (actual !== expectedId) {
+    throw new Error(`Thrift type mismatch: expected wire type ${expectedId}, got ${actual}`)
+  }
+}
+
+function readCollectionSize(reader: ThriftBinaryReader): number {
+  const size = reader.readI32()
+  if (size < 0 || size > MAX_THRIFT_COLLECTION_SIZE) {
+    throw new Error(`Invalid Thrift collection size: ${size}`)
+  }
+  return size
+}
+
+function skipValue(reader: ThriftBinaryReader, wireType: number, depth: number): void {
+  if (depth > MAX_THRIFT_DEPTH) throw new Error('Thrift value exceeds maximum nesting depth')
+
+  switch (wireType) {
+    case 2:
+    case 3:
+      reader.readByte()
+      return
+    case 4:
+      reader.readDouble()
+      return
+    case 6:
+      reader.readI16()
+      return
+    case 8:
+      reader.readI32()
+      return
+    case 10:
+      reader.readI64()
+      return
+    case 11:
+      reader.readString(true)
+      return
+    case 12:
+      while (true) {
+        const fieldType = reader.readByte()
+        if (fieldType === 0) return
+        reader.readI16()
+        skipValue(reader, fieldType, depth + 1)
+      }
+    case 13: {
+      const keyType = reader.readByte()
+      const valueType = reader.readByte()
+      const size = readCollectionSize(reader)
+      for (let index = 0; index < size; index += 1) {
+        skipValue(reader, keyType, depth + 1)
+        skipValue(reader, valueType, depth + 1)
+      }
+      return
+    }
+    case 14:
+    case 15: {
+      const itemType = reader.readByte()
+      const size = readCollectionSize(reader)
+      for (let index = 0; index < size; index += 1) {
+        skipValue(reader, itemType, depth + 1)
+      }
+      return
+    }
+    default:
+      throw new Error(`Unsupported Thrift wire type: ${wireType}`)
+  }
+}
+
+function readValue(
+  reader: ThriftBinaryReader,
+  type: ThriftType,
+  ast: ThriftAST,
+  depth: number,
+): unknown {
+  if (depth > MAX_THRIFT_DEPTH) throw new Error('Thrift value exceeds maximum nesting depth')
+
+  if (typeof type === 'string') {
+    if (ast.typedef?.[type]) return readValue(reader, ast.typedef[type].type, ast, depth + 1)
+    switch (type) {
+      case 'bool':
+        return reader.readByte() !== 0
+      case 'byte':
+      case 'i8':
+        return reader.readI8()
+      case 'i16':
+        return reader.readI16()
+      case 'int':
+      case 'i32':
+        return reader.readI32()
+      case 'i64':
+        return reader.readI64()
+      case 'double':
+        return reader.readDouble()
+      case 'string':
+        return reader.readString(false)
+      case 'binary':
+        return reader.readString(true)
+      default: {
+        const enumInfo = ast.enum?.[type]
+        if (enumInfo) {
+          const value = reader.readI32()
+          return enumInfo.items.find((item) => item.value === value)?.name ?? value
+        }
+        if (ast.struct?.[type] || ast.exception?.[type] || ast.union?.[type]) {
+          return readStruct(reader, type, ast, depth + 1)
+        }
+        throw new Error(`Unknown type: ${type}`)
+      }
+    }
+  }
+
+  switch (type.name) {
+    case 'list':
+    case 'set': {
+      const wireType = reader.readByte()
+      assertWireType(wireType, type.valueType, ast)
+      const size = readCollectionSize(reader)
+      return Array.from({ length: size }, () =>
+        readValue(reader, type.valueType, ast, depth + 1),
+      )
+    }
+    case 'map': {
+      const keyWireType = reader.readByte()
+      const valueWireType = reader.readByte()
+      assertWireType(keyWireType, type.keyType, ast)
+      assertWireType(valueWireType, type.valueType, ast)
+      const size = readCollectionSize(reader)
+      const result: Record<string, unknown> = Object.create(null)
+      for (let index = 0; index < size; index += 1) {
+        const key = readValue(reader, type.keyType, ast, depth + 1)
+        result[String(key)] = readValue(reader, type.valueType, ast, depth + 1)
+      }
+      return result
+    }
+  }
+}
+
+function readStruct(
+  reader: ThriftBinaryReader,
+  structName: string,
+  ast: ThriftAST,
+  depth: number,
+): Record<string, unknown> {
+  if (depth > MAX_THRIFT_DEPTH) throw new Error('Thrift value exceeds maximum nesting depth')
+
+  const fields =
+    ast.struct?.[structName] ??
+    ast.exception?.[structName] ??
+    ast.union?.[structName]
+  if (!fields) throw new Error(`Unknown Thrift struct, exception, or union: ${structName}`)
+
+  const fieldsById = new Map(fields.map((field) => [field.id, field]))
+  const result: Record<string, unknown> = {}
+  while (true) {
+    const wireType = reader.readByte()
+    if (wireType === 0) return result
+    const fieldId = reader.readI16()
+    const field = fieldsById.get(fieldId)
+    if (!field) {
+      skipValue(reader, wireType, depth + 1)
+      continue
+    }
+    assertWireType(wireType, field.type, ast)
+    result[field.name] = readValue(reader, field.type, ast, depth + 1)
+  }
+}
+
+export function decodeThriftBinary(
+  ast: ThriftAST,
+  structName: string,
+  buffer: Buffer,
+): Record<string, unknown> {
+  const reader = new ThriftBinaryReader(buffer)
+  const result = readStruct(reader, structName, ast, 0)
+  if (reader.remaining !== 0) {
+    throw new Error(`Thrift message has ${reader.remaining} trailing byte(s)`)
+  }
+  return result
+}

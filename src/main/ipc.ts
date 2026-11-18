@@ -44,6 +44,7 @@ import {
   testKafkaConnection,
 } from './kafka'
 import {
+  decodeThriftBinary,
   getThriftStructNames,
   parseThriftIDL,
 } from './thrift'
@@ -204,6 +205,16 @@ export function registerIpcHandlers(
     const ast = parseThriftIDL(idl)
     return getThriftStructNames(ast)
   })
+  ipcMain.handle(
+    IPC.KafkaThriftDecode,
+    (_e, valueBase64: string, idl: string, structName: string) => {
+      if (!/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/.test(valueBase64)) {
+        throw new Error('Invalid encoded Thrift message')
+      }
+      const ast = parseThriftIDL(idl)
+      return decodeThriftBinary(ast, structName, Buffer.from(valueBase64, 'base64'))
+    },
+  )
 
   ipcMain.handle(IPC.RedisConnectionsList, () => redisStore.list())
   ipcMain.handle(IPC.RedisConnectionsSave, (_e, input: RedisConnectionInput) => {

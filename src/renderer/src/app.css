@@ -814,6 +814,8 @@ body {
 }
 
 .kafka-message > summary {
+    display: flex;
+    align-items: center;
     cursor: pointer;
 }
 
@@ -823,10 +825,39 @@ body {
 
 .kafka-message-meta {
     display: flex;
+    align-items: center;
     flex-wrap: wrap;
     gap: 8px 14px;
     color: var(--text-dim);
     font: 11px var(--mono);
+}
+
+.kafka-decode-toggle {
+    flex: 0 0 auto;
+    margin-left: auto;
+}
+
+.kafka-thrift-decoder {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    margin: 0 0 12px;
+    padding: 10px;
+    border: 1px solid var(--border-soft);
+    border-radius: var(--radius);
+    background: var(--bg);
+}
+
+.kafka-thrift-controls {
+    display: flex;
+    align-items: end;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+
+.kafka-thrift-struct {
+    flex: 1 1 180px;
+    max-width: 320px;
 }
 
 .kafka-message pre {

@@ -506,6 +506,7 @@ function toKafkaMessage({
     timestamp: message.timestamp || null,
     key: decode(message.key),
     value: decode(message.value),
+    valueBase64: message.value?.toString('base64') ?? null,
     headers,
   }
 }

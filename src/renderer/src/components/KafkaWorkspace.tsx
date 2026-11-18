@@ -687,6 +687,192 @@ function KafkaJsonViewer({ value }: { value: string }) {
   );
 }
 
+function KafkaMessageAccordion({
+  message,
+}: {
+  message: KafkaMessage;
+}) {
+  const [decodeOpen, setDecodeOpen] = useState(false);
+  const [idl, setIdl] = useState("");
+  const [contractName, setContractName] = useState("");
+  const [structs, setStructs] = useState<string[]>([]);
+  const [parsing, setParsing] = useState(false);
+  const [decoding, setDecoding] = useState(false);
+  const [decodedJson, setDecodedJson] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const detailsRef = useRef<HTMLDetailsElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (!idl.trim()) {
+      setStructs([]);
+      setParsing(false);
+      setError(null);
+      return;
+    }
+
+    let cancelled = false;
+    setParsing(true);
+    api
+      .parseThriftIDL(idl)
+      .then((names) => {
+        if (cancelled) return;
+        setStructs(names);
+        setContractName(names.length === 1 ? names[0] : "");
+        setError(names.length ? null : "No structs found in the Thrift contract");
+      })
+      .catch((reason: unknown) => {
+        if (cancelled) return;
+        setStructs([]);
+        setContractName("");
+        setError(errorMessage(reason));
+      })
+      .finally(() => {
+        if (!cancelled) setParsing(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [idl]);
+
+  async function loadContract(file: File | undefined): Promise<void> {
+    if (!file) return;
+    try {
+      setIdl(await file.text());
+      setDecodedJson(null);
+      setError(null);
+    } catch (reason) {
+      setError(`Could not read contract: ${errorMessage(reason)}`);
+    }
+  }
+
+  async function startDecode(): Promise<void> {
+    if (!message.valueBase64 || !idl.trim() || !contractName) return;
+    setDecoding(true);
+    setError(null);
+    setDecodedJson(null);
+    try {
+      const value = await api.decodeKafkaThrift(
+        message.valueBase64,
+        idl,
+        contractName,
+      );
+      setDecodedJson(JSON.stringify(value, null, 2) ?? "null");
+    } catch (reason) {
+      setError(errorMessage(reason));
+    } finally {
+      setDecoding(false);
+    }
+  }
+
+  return (
+    <details
+      className="kafka-message"
+      ref={detailsRef}
+    >
+      <summary className="kafka-message-meta">
+        <span>Partition {message.partition}</span>
+        <span>Offset {message.offset}</span>
+        <span>
+          {message.timestamp
+            ? new Date(Number(message.timestamp)).toLocaleString()
+            : "No timestamp"}
+        </span>
+        {message.key !== null && <span>Key: {message.key}</span>}
+        <button
+          className="btn kafka-decode-toggle"
+          aria-expanded={decodeOpen}
+          onClick={(event) => {
+            event.preventDefault();
+            event.stopPropagation();
+            if (detailsRef.current) detailsRef.current.open = true;
+            setDecodeOpen((open) => !open);
+          }}
+        >
+          Decode
+        </button>
+      </summary>
+      {decodeOpen && (
+        <div className="kafka-thrift-decoder">
+          <div className="kafka-thrift-controls">
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept=".thrift,text/plain"
+              hidden
+              onChange={(event) => {
+                void loadContract(event.target.files?.[0]);
+                event.currentTarget.value = "";
+              }}
+            />
+            <button
+              className="btn"
+              onClick={() => fileInputRef.current?.click()}
+            >
+              Upload Thrift contract
+            </button>
+            <label className="field kafka-thrift-struct">
+              <span>Struct</span>
+              <select
+                className="input"
+                value={contractName}
+                onChange={(event) => {
+                  setContractName(event.target.value);
+                  setDecodedJson(null);
+                }}
+                disabled={!structs.length || parsing}
+              >
+                <option value="">Select struct…</option>
+                {structs.map((name) => (
+                  <option key={name} value={name}>
+                    {name}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <button
+              className="btn btn-primary"
+              onClick={() => void startDecode()}
+              disabled={
+                !message.valueBase64 ||
+                !contractName ||
+                parsing ||
+                decoding
+              }
+            >
+              {decoding ? "Decoding…" : "Start"}
+            </button>
+            {parsing && <span className="muted">Reading contract…</span>}
+          </div>
+          {error && <div className="banner banner-error">{error}</div>}
+          {decodedJson !== null && <KafkaJsonViewer value={decodedJson} />}
+          {!message.valueBase64 && (
+            <div className="muted">This event has no binary value to decode.</div>
+          )}
+        </div>
+      )}
+      <div className="kafka-message-body">
+        {message.value === null ? (
+          <pre>(null value)</pre>
+        ) : (
+          <KafkaJsonViewer value={message.value} />
+        )}
+        {Object.keys(message.headers).length > 0 && (
+          <details>
+            <summary>
+              Headers ({Object.keys(message.headers).length})
+            </summary>
+            <KafkaJsonViewer
+              value={JSON.stringify(message.headers, null, 2)}
+            />
+          </details>
+        )}
+      </div>
+    </details>
+  );
+}
+
 function KafkaTopicDetailDialog({
   topic,
   partitions,
@@ -1825,42 +2011,10 @@ export function KafkaWorkspace({ onClose }: { onClose: () => void }) {
                 )}
                 <div className="kafka-message-list">
                   {visibleMessages.map((message) => (
-                    <details
-                      className="kafka-message"
+                    <KafkaMessageAccordion
                       key={`${message.topic}-${message.partition}-${message.offset}`}
-                    >
-                      <summary className="kafka-message-meta">
-                        <span>Partition {message.partition}</span>
-                        <span>Offset {message.offset}</span>
-                        <span>
-                          {message.timestamp
-                            ? new Date(
-                                Number(message.timestamp),
-                              ).toLocaleString()
-                            : "No timestamp"}
-                        </span>
-                        {message.key !== null && (
-                          <span>Key: {message.key}</span>
-                        )}
-                      </summary>
-                      <div className="kafka-message-body">
-                        {message.value === null ? (
-                          <pre>(null value)</pre>
-                        ) : (
-                          <KafkaJsonViewer value={message.value} />
-                        )}
-                        {Object.keys(message.headers).length > 0 && (
-                          <details>
-                            <summary>
-                              Headers ({Object.keys(message.headers).length})
-                            </summary>
-                            <KafkaJsonViewer
-                              value={JSON.stringify(message.headers, null, 2)}
-                            />
-                          </details>
-                        )}
-                      </div>
-                    </details>
+                      message={message}
+                    />
                   ))}
                   {selectedTopic &&
                     !loadingMessages &&
