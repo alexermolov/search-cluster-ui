@@ -565,8 +565,7 @@ export async function fetchKafkaMessages(
   const client = cache.get(config)
   const admin = await client.admin()
   const connectionId = ('id' in config && config.id) ? config.id : 'draft'
-  // Stable groupId per connection+topic so we don't leak consumer groups on every refresh
-  const groupId = `search-cluster-ui-${connectionId.slice(0, 8)}-${hashString(topic)}`
+  const groupId = `search-cluster-ui-${connectionId.slice(0, 8)}-${hashString(topic)}-${randomUUID()}`
   let consumer: Consumer | undefined
 
   try {
@@ -634,17 +633,21 @@ export async function fetchKafkaMessages(
     let timer: ReturnType<typeof setTimeout>
     let idleTimer: ReturnType<typeof setTimeout> | null = null
 
-    const finish = () => {
+    const finish = (error?: Error) => {
       if (completed) return
       completed = true
       clearTimeout(timer)
       if (idleTimer) clearTimeout(idleTimer)
-      void consumer?.stop().then(resolveDone, rejectDone)
+      void consumer?.stop().then(
+        () => (error ? rejectDone(error) : resolveDone()),
+        (reason: unknown) =>
+          rejectDone(reason instanceof Error ? reason : new Error(String(reason))),
+      )
     }
 
     const resetIdleTimer = () => {
       if (idleTimer) clearTimeout(idleTimer)
-      idleTimer = setTimeout(finish, 1500)
+      idleTimer = setTimeout(finish, Math.max(10_000, config.timeoutMs))
     }
 
     timer = setTimeout(
@@ -676,11 +679,17 @@ export async function fetchKafkaMessages(
           else consumer?.seek({ topic, partition, offset: start.toString() })
         } else finished.add(partition)
       }
-      if (assigned.length === 0 || finished.size === offsets.length) finish()
+      if (assigned.length === 0) {
+        finish(new Error(`Kafka assigned no partitions for topic "${topic}"`))
+      } else if (finished.size === offsets.length) {
+        finish()
+      }
     })
 
     void consumer
       .run({
+        autoCommit: false,
+        partitionsConsumedConcurrently: Math.min(offsets.length, KAFKA_OFFSET_CONCURRENCY),
         eachMessage: async (payload) => {
           const message = toKafkaMessage(payload)
           messages.push(message)
