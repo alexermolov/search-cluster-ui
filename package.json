@@ -29,6 +29,7 @@
     "react-dom": "^18.3.1",
     "react-markdown": "^10.1.0",
     "remark-gfm": "^4.0.1",
+    "thrift-parser": "^0.4.2",
     "zustand": "^4.5.5"
   },
   "devDependencies": {

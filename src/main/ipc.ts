@@ -44,6 +44,10 @@ import {
   testKafkaConnection,
 } from './kafka'
 import {
+  getThriftStructNames,
+  parseThriftIDL,
+} from './thrift'
+import {
   deleteRedisKey,
   dropRedisClient,
   fetchRedisServerInfo,
@@ -196,6 +200,10 @@ export function registerIpcHandlers(
   ipcMain.handle(IPC.KafkaMessageProduce, (_e, id: string, input: KafkaMessageProduceInput) =>
     produceKafkaMessage(kafkaCache, kafkaConfigFor(id), input),
   )
+  ipcMain.handle(IPC.KafkaThriftParse, (_e, idl: string) => {
+    const ast = parseThriftIDL(idl)
+    return getThriftStructNames(ast)
+  })
 
   ipcMain.handle(IPC.RedisConnectionsList, () => redisStore.list())
   ipcMain.handle(IPC.RedisConnectionsSave, (_e, input: RedisConnectionInput) => {

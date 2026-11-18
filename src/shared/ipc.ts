@@ -98,6 +98,7 @@ export const IPC = {
   KafkaSearch: 'kafka:search',
   KafkaSearchProgress: 'kafka:search-progress',
   KafkaMessageProduce: 'kafka:message-produce',
+  KafkaThriftParse: 'kafka:thrift-parse',
   RedisConnectionsList: 'redis:connections-list',
   RedisConnectionsSave: 'redis:connections-save',
   RedisConnectionsDelete: 'redis:connections-delete',
@@ -185,6 +186,8 @@ export interface KafkaMessageProduceInput {
   topic: string
   key: string | null
   value: string
+  format?: 'raw' | 'json' | 'thrift'
+  thrift?: { idl: string; structName: string }
 }
 
 export interface RedisKeysScanInput {
@@ -391,6 +394,7 @@ export interface ElectronApi {
     onProgress: (progress: KafkaSearchProgress) => void,
   ): Promise<KafkaSearchResult>
   produceKafkaMessage(connectionId: string, input: KafkaMessageProduceInput): Promise<void>
+  parseThriftIDL(idl: string): Promise<string[]>
   listRedisConnections(): Promise<StoredRedisConnection[]>
   saveRedisConnection(input: RedisConnectionInput): Promise<StoredRedisConnection>
   deleteRedisConnection(id: string): Promise<void>

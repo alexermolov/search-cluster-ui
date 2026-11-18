@@ -430,21 +430,75 @@ function KafkaProduceDialog({
   onSend: (input: KafkaMessageProduceInput) => Promise<void>;
 }) {
   const [key, setKey] = useState("");
+  const [format, setFormat] = useState<"raw" | "json" | "thrift">("json");
   const [value, setValue] = useState("{\n  \n}");
+  const [thriftIdl, setThriftIdl] = useState("");
+  const [thriftStruct, setThriftStruct] = useState("");
+  const [thriftStructs, setThriftStructs] = useState<string[]>([]);
+  const [thriftError, setThriftError] = useState<string | null>(null);
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  async function submit(): Promise<void> {
-    try {
-      JSON.parse(value);
-    } catch {
-      setError("Message value must be valid JSON");
+  useEffect(() => {
+    if (format !== "thrift" || !thriftIdl.trim()) {
+      setThriftStructs([]);
+      setThriftStruct("");
+      setThriftError(null);
       return;
+    }
+    let cancelled = false;
+    api
+      .parseThriftIDL(thriftIdl)
+      .then((names) => {
+        if (cancelled) return;
+        setThriftStructs(names);
+        setThriftError(null);
+        if (names.length === 1) setThriftStruct(names[0]);
+        else if (!names.includes(thriftStruct)) setThriftStruct("");
+      })
+      .catch((e: unknown) => {
+        if (cancelled) return;
+        setThriftStructs([]);
+        setThriftStruct("");
+        setThriftError(errorMessage(e));
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [thriftIdl, format]);
+
+  async function submit(): Promise<void> {
+    if (format === "json" || format === "thrift") {
+      try {
+        JSON.parse(value);
+      } catch {
+        setError("Message value must be valid JSON");
+        return;
+      }
+    }
+    if (format === "thrift") {
+      if (!thriftIdl.trim()) {
+        setError("Thrift IDL is required");
+        return;
+      }
+      if (!thriftStruct) {
+        setError("Please select a Thrift struct");
+        return;
+      }
     }
     setSending(true);
     setError(null);
     try {
-      await onSend({ topic, key: key || null, value });
+      await onSend({
+        topic,
+        key: key || null,
+        value,
+        format,
+        thrift:
+          format === "thrift"
+            ? { idl: thriftIdl, structName: thriftStruct }
+            : undefined,
+      });
       onClose();
     } catch (reason) {
       setError(errorMessage(reason));
@@ -462,24 +516,106 @@ function KafkaProduceDialog({
     >
       <div className="modal kafka-action-modal kafka-produce-modal">
         <h2>Send event to {topic}</h2>
-        <label className="field">
-          <span>Key (optional)</span>
-          <input
-            className="input mono"
-            value={key}
-            onChange={(event) => setKey(event.target.value)}
-          />
-        </label>
-        <div className="field">
-          <span>JSON value</span>
-          <JsonEditor
-            value={value}
-            onChange={setValue}
-            onRun={() => void submit()}
-            placeholder="Enter a JSON value"
-            minHeight="180px"
-          />
+        <div className="field-row">
+          <label className="field">
+            <span>Key (optional)</span>
+            <input
+              className="input mono"
+              value={key}
+              onChange={(event) => setKey(event.target.value)}
+            />
+          </label>
+          <label className="field">
+            <span>Format</span>
+            <select
+              className="input"
+              value={format}
+              onChange={(event) =>
+                setFormat(event.target.value as "raw" | "json" | "thrift")
+              }
+            >
+              <option value="json">JSON</option>
+              <option value="raw">Raw string</option>
+              <option value="thrift">Thrift</option>
+            </select>
+          </label>
         </div>
+
+        {format === "raw" && (
+          <label className="field">
+            <span>Raw value</span>
+            <textarea
+              className="input mono"
+              value={value}
+              onChange={(event) => setValue(event.target.value)}
+              rows={10}
+              placeholder="Free-form text"
+              style={{ minHeight: "180px", fontFamily: "monospace" }}
+            />
+          </label>
+        )}
+
+        {format === "json" && (
+          <div className="field">
+            <span>JSON value</span>
+            <JsonEditor
+              value={value}
+              onChange={setValue}
+              onRun={() => void submit()}
+              placeholder="Enter a JSON value"
+              minHeight="180px"
+            />
+          </div>
+        )}
+
+        {format === "thrift" && (
+          <>
+            <label className="field">
+              <span>Thrift IDL contract</span>
+              <textarea
+                className="input mono"
+                value={thriftIdl}
+                onChange={(event) => setThriftIdl(event.target.value)}
+                rows={8}
+                placeholder={`struct User {\n  1: required i32 id,\n  2: required string name\n}`}
+                style={{ minHeight: "140px", fontFamily: "monospace", fontSize: "12px" }}
+              />
+            </label>
+            {thriftError && (
+              <div className="banner banner-error" style={{ marginTop: -6 }}>
+                {thriftError}
+              </div>
+            )}
+            {thriftStructs.length > 0 && (
+              <label className="field">
+                <span>Struct / Exception / Union</span>
+                <select
+                  className="input"
+                  value={thriftStruct}
+                  onChange={(event) => setThriftStruct(event.target.value)}
+                >
+                  <option value="">— Select —</option>
+                  {thriftStructs.map((name) => (
+                    <option key={name} value={name}>
+                      {name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            )}
+            <div className="field">
+              <span>JSON payload (will be serialized to Thrift binary)</span>
+              <JsonEditor
+                value={value}
+                onChange={setValue}
+                onRun={() => void submit()}
+                placeholder="Enter JSON matching the Thrift struct"
+                minHeight="160px"
+              />
+            </div>
+          </>
+        )}
+
         {error && <div className="banner banner-error">{error}</div>}
         <div className="modal-footer">
           <span className="spacer" />

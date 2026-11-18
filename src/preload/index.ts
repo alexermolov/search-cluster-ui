@@ -118,6 +118,7 @@ const api: ElectronApi = {
   },
   produceKafkaMessage: (connectionId, input) =>
     ipcRenderer.invoke(IPC.KafkaMessageProduce, connectionId, input),
+  parseThriftIDL: (idl) => ipcRenderer.invoke(IPC.KafkaThriftParse, idl),
   listRedisConnections: () => ipcRenderer.invoke(IPC.RedisConnectionsList),
   saveRedisConnection: (input) => ipcRenderer.invoke(IPC.RedisConnectionsSave, input),
   deleteRedisConnection: (id) => ipcRenderer.invoke(IPC.RedisConnectionsDelete, id),
