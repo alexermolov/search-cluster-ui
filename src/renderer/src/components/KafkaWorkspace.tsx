@@ -420,68 +420,85 @@ function KafkaTopicCreateDialog({
   );
 }
 
+type KafkaProduceDraft = {
+  key: string;
+  format: "raw" | "json" | "thrift";
+  value: string;
+  thriftIdl: string;
+  thriftStruct: string;
+};
+
+const EMPTY_KAFKA_PRODUCE_DRAFT: KafkaProduceDraft = {
+  key: "",
+  format: "json",
+  value: "{\n  \n}",
+  thriftIdl: "",
+  thriftStruct: "",
+};
+
 function KafkaProduceDialog({
   topic,
+  draft,
+  onDraftChange,
   onClose,
   onSend,
 }: {
   topic: string;
+  draft: KafkaProduceDraft;
+  onDraftChange: (patch: Partial<KafkaProduceDraft>) => void;
   onClose: () => void;
   onSend: (input: KafkaMessageProduceInput) => Promise<void>;
 }) {
-  const [key, setKey] = useState("");
-  const [format, setFormat] = useState<"raw" | "json" | "thrift">("json");
-  const [value, setValue] = useState("{\n  \n}");
-  const [thriftIdl, setThriftIdl] = useState("");
-  const [thriftStruct, setThriftStruct] = useState("");
   const [thriftStructs, setThriftStructs] = useState<string[]>([]);
   const [thriftError, setThriftError] = useState<string | null>(null);
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const thriftStructRef = useRef(draft.thriftStruct);
+  thriftStructRef.current = draft.thriftStruct;
 
   useEffect(() => {
-    if (format !== "thrift" || !thriftIdl.trim()) {
+    if (draft.format !== "thrift" || !draft.thriftIdl.trim()) {
       setThriftStructs([]);
-      setThriftStruct("");
       setThriftError(null);
       return;
     }
     let cancelled = false;
     api
-      .parseThriftIDL(thriftIdl)
+      .parseThriftIDL(draft.thriftIdl)
       .then((names) => {
         if (cancelled) return;
         setThriftStructs(names);
         setThriftError(null);
-        if (names.length === 1) setThriftStruct(names[0]);
-        else if (!names.includes(thriftStruct)) setThriftStruct("");
+        if (names.length === 1) onDraftChange({ thriftStruct: names[0] });
+        else if (!names.includes(thriftStructRef.current)) {
+          onDraftChange({ thriftStruct: "" });
+        }
       })
       .catch((e: unknown) => {
         if (cancelled) return;
         setThriftStructs([]);
-        setThriftStruct("");
         setThriftError(errorMessage(e));
       });
     return () => {
       cancelled = true;
     };
-  }, [thriftIdl, format]);
+  }, [draft.format, draft.thriftIdl, onDraftChange]);
 
   async function submit(): Promise<void> {
-    if (format === "json" || format === "thrift") {
+    if (draft.format === "json" || draft.format === "thrift") {
       try {
-        JSON.parse(value);
+        JSON.parse(draft.value);
       } catch {
         setError("Message value must be valid JSON");
         return;
       }
     }
-    if (format === "thrift") {
-      if (!thriftIdl.trim()) {
+    if (draft.format === "thrift") {
+      if (!draft.thriftIdl.trim()) {
         setError("Thrift IDL is required");
         return;
       }
-      if (!thriftStruct) {
+      if (!draft.thriftStruct) {
         setError("Please select a Thrift struct");
         return;
       }
@@ -491,12 +508,12 @@ function KafkaProduceDialog({
     try {
       await onSend({
         topic,
-        key: key || null,
-        value,
-        format,
+        key: draft.key || null,
+        value: draft.value,
+        format: draft.format,
         thrift:
-          format === "thrift"
-            ? { idl: thriftIdl, structName: thriftStruct }
+          draft.format === "thrift"
+            ? { idl: draft.thriftIdl, structName: draft.thriftStruct }
             : undefined,
       });
       onClose();
@@ -521,17 +538,19 @@ function KafkaProduceDialog({
             <span>Key (optional)</span>
             <input
               className="input mono"
-              value={key}
-              onChange={(event) => setKey(event.target.value)}
+              value={draft.key}
+              onChange={(event) => onDraftChange({ key: event.target.value })}
             />
           </label>
           <label className="field">
             <span>Format</span>
             <select
               className="input"
-              value={format}
+              value={draft.format}
               onChange={(event) =>
-                setFormat(event.target.value as "raw" | "json" | "thrift")
+                onDraftChange({
+                  format: event.target.value as KafkaProduceDraft["format"],
+                })
               }
             >
               <option value="json">JSON</option>
@@ -541,13 +560,13 @@ function KafkaProduceDialog({
           </label>
         </div>
 
-        {format === "raw" && (
+        {draft.format === "raw" && (
           <label className="field">
             <span>Raw value</span>
             <textarea
               className="input mono"
-              value={value}
-              onChange={(event) => setValue(event.target.value)}
+              value={draft.value}
+              onChange={(event) => onDraftChange({ value: event.target.value })}
               rows={10}
               placeholder="Free-form text"
               style={{ minHeight: "180px", fontFamily: "monospace" }}
@@ -555,12 +574,12 @@ function KafkaProduceDialog({
           </label>
         )}
 
-        {format === "json" && (
+        {draft.format === "json" && (
           <div className="field">
             <span>JSON value</span>
             <JsonEditor
-              value={value}
-              onChange={setValue}
+              value={draft.value}
+              onChange={(value) => onDraftChange({ value })}
               onRun={() => void submit()}
               placeholder="Enter a JSON value"
               minHeight="180px"
@@ -568,14 +587,16 @@ function KafkaProduceDialog({
           </div>
         )}
 
-        {format === "thrift" && (
+        {draft.format === "thrift" && (
           <>
             <label className="field">
               <span>Thrift IDL contract</span>
               <textarea
                 className="input mono"
-                value={thriftIdl}
-                onChange={(event) => setThriftIdl(event.target.value)}
+                value={draft.thriftIdl}
+                onChange={(event) =>
+                  onDraftChange({ thriftIdl: event.target.value })
+                }
                 rows={8}
                 placeholder={`struct User {\n  1: required i32 id,\n  2: required string name\n}`}
                 style={{ minHeight: "140px", fontFamily: "monospace", fontSize: "12px" }}
@@ -591,8 +612,10 @@ function KafkaProduceDialog({
                 <span>Struct / Exception / Union</span>
                 <select
                   className="input"
-                  value={thriftStruct}
-                  onChange={(event) => setThriftStruct(event.target.value)}
+                  value={draft.thriftStruct}
+                  onChange={(event) =>
+                    onDraftChange({ thriftStruct: event.target.value })
+                  }
                 >
                   <option value="">— Select —</option>
                   {thriftStructs.map((name) => (
@@ -606,8 +629,8 @@ function KafkaProduceDialog({
             <div className="field">
               <span>JSON payload (will be serialized to Thrift binary)</span>
               <JsonEditor
-                value={value}
-                onChange={setValue}
+                value={draft.value}
+                onChange={(value) => onDraftChange({ value })}
                 onRun={() => void submit()}
                 placeholder="Enter JSON matching the Thrift struct"
                 minHeight="160px"
@@ -841,6 +864,9 @@ export function KafkaWorkspace({ onClose }: { onClose: () => void }) {
   >(undefined);
   const [creatingTopic, setCreatingTopic] = useState(false);
   const [producing, setProducing] = useState(false);
+  const [produceDraft, setProduceDraft] = useState<KafkaProduceDraft>(
+    EMPTY_KAFKA_PRODUCE_DRAFT,
+  );
   const [detailTopic, setDetailTopic] = useState<string | null>(null);
   const [partitions, setPartitions] = useState<KafkaPartitionInfo[]>([]);
   const [consumerGroups, setConsumerGroups] = useState<
@@ -853,6 +879,12 @@ export function KafkaWorkspace({ onClose }: { onClose: () => void }) {
   const messageRequest = useRef(0);
   const searchRequest = useRef(0);
   const activeSearchId = useRef<string | null>(null);
+  const updateProduceDraft = useCallback(
+    (patch: Partial<KafkaProduceDraft>) => {
+      setProduceDraft((current) => ({ ...current, ...patch }));
+    },
+    [],
+  );
 
   const active =
     connections.find((connection) => connection.id === activeId) ?? null;
@@ -1875,6 +1907,8 @@ export function KafkaWorkspace({ onClose }: { onClose: () => void }) {
       {producing && selectedTopic && (
         <KafkaProduceDialog
           topic={selectedTopic}
+          draft={produceDraft}
+          onDraftChange={updateProduceDraft}
           onClose={() => setProducing(false)}
           onSend={produceMessage}
         />
