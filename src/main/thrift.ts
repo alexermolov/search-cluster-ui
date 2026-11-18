@@ -617,10 +617,383 @@ export function decodeThriftBinary(
   structName: string,
   buffer: Buffer,
 ): Record<string, unknown> {
+  if (buffer.length > 0 && buffer[0] > 15) {
+    return decodeThriftCompact(ast, structName, buffer)
+  }
+
   const reader = new ThriftBinaryReader(buffer)
-  const result = readStruct(reader, structName, ast, 0)
+  try {
+    const result = readStruct(reader, structName, ast, 0)
+    if (reader.remaining !== 0) {
+      throw new Error(`Thrift message has ${reader.remaining} trailing byte(s)`)
+    }
+    return result
+  } catch (binaryError) {
+    try {
+      return decodeThriftCompact(ast, structName, buffer)
+    } catch {
+      throw binaryError
+    }
+  }
+}
+
+/* ─── TCompactProtocol reader ─── */
+
+class ThriftCompactReader {
+  private offset = 0
+
+  constructor(private readonly buffer: Buffer) {}
+
+  private requireBytes(length: number): void {
+    if (!Number.isInteger(length) || length < 0 || this.offset + length > this.buffer.length) {
+      throw new Error('Unexpected end of Thrift compact message')
+    }
+  }
+
+  readByte(): number {
+    this.requireBytes(1)
+    return this.buffer.readUInt8(this.offset++)
+  }
+
+  readDouble(): number {
+    this.requireBytes(8)
+    const value = this.buffer.readDoubleLE(this.offset)
+    this.offset += 8
+    return value
+  }
+
+  readVarint(maxBytes: number): bigint {
+    let value = 0n
+    for (let index = 0; index < maxBytes; index += 1) {
+      const byte = this.readByte()
+      value |= BigInt(byte & 0x7f) << BigInt(index * 7)
+      if ((byte & 0x80) === 0) return value
+    }
+    throw new Error('Invalid Thrift compact varint')
+  }
+
+  readSignedVarint(maxBytes: number): bigint {
+    const value = this.readVarint(maxBytes)
+    return (value >> 1n) ^ -(value & 1n)
+  }
+
+  readI16(): number {
+    const value = this.readSignedVarint(3)
+    if (value < -32768n || value > 32767n) {
+      throw new Error(`Thrift compact i16 is out of range: ${value}`)
+    }
+    return Number(value)
+  }
+
+  readI32(): number {
+    const value = this.readSignedVarint(5)
+    if (value < -2147483648n || value > 2147483647n) {
+      throw new Error(`Thrift compact i32 is out of range: ${value}`)
+    }
+    return Number(value)
+  }
+
+  readI64(): string {
+    return this.readSignedVarint(10).toString()
+  }
+
+  readBool(): boolean {
+    const value = this.readByte()
+    if (value !== COMPACT_TRUE && value !== COMPACT_FALSE) {
+      throw new Error(`Invalid Thrift compact boolean: ${value}`)
+    }
+    return value === COMPACT_TRUE
+  }
+
+  readString(binary: boolean): string {
+    const length = this.readVarint(5)
+    if (length > BigInt(MAX_THRIFT_COLLECTION_SIZE)) {
+      throw new Error(`Invalid Thrift compact string size: ${length}`)
+    }
+    const size = Number(length)
+    this.requireBytes(size)
+    const bytes = this.buffer.subarray(this.offset, this.offset + size)
+    this.offset += size
+    return binary ? bytes.toString('base64') : bytes.toString('utf8')
+  }
+
+  get remaining(): number {
+    return this.buffer.length - this.offset
+  }
+}
+
+const COMPACT_TRUE = 1
+const COMPACT_FALSE = 2
+
+function getCompactTypeId(type: ThriftType, ast: ThriftAST): number {
+  if (typeof type === 'string') {
+    if (ast.typedef?.[type]) return getCompactTypeId(ast.typedef[type].type, ast)
+    switch (type) {
+      case 'bool':
+        return COMPACT_TRUE
+      case 'byte':
+      case 'i8':
+        return 3
+      case 'i16':
+        return 4
+      case 'int':
+      case 'i32':
+        return 5
+      case 'i64':
+        return 6
+      case 'double':
+        return 7
+      case 'string':
+      case 'binary':
+        return 8
+      default:
+        if (ast.enum?.[type]) return 5
+        if (ast.struct?.[type] || ast.exception?.[type] || ast.union?.[type]) return 12
+        throw new Error(`Unknown type: ${type}`)
+    }
+  }
+  switch (type.name) {
+    case 'list':
+      return 9
+    case 'set':
+      return 10
+    case 'map':
+      return 11
+  }
+}
+
+function isCompactBoolType(type: ThriftType, ast: ThriftAST): boolean {
+  if (typeof type !== 'string') return false
+  if (type === 'bool') return true
+  const typedef = ast.typedef?.[type]
+  return typedef ? isCompactBoolType(typedef.type, ast) : false
+}
+
+function assertCompactType(actual: number, expected: ThriftType, ast: ThriftAST): void {
+  const expectedId = getCompactTypeId(expected, ast)
+  if (
+    actual !== expectedId &&
+    !(isCompactBoolType(expected, ast) && actual === COMPACT_FALSE)
+  ) {
+    throw new Error(`Thrift compact type mismatch: expected ${expectedId}, got ${actual}`)
+  }
+}
+
+function readCompactCollectionSize(reader: ThriftCompactReader): number {
+  const size = reader.readVarint(5)
+  if (size > BigInt(MAX_THRIFT_COLLECTION_SIZE)) {
+    throw new Error(`Invalid Thrift compact collection size: ${size}`)
+  }
+  return Number(size)
+}
+
+function readCompactFieldHeader(
+  reader: ThriftCompactReader,
+  previousFieldId: number,
+): { fieldId: number; type: number } {
+  const header = reader.readByte()
+  const type = header & 0x0f
+  if (type === 0) return { fieldId: 0, type: 0 }
+
+  const delta = header >>> 4
+  const fieldId = delta === 0 ? previousFieldId + reader.readI16() : previousFieldId + delta
+  if (fieldId < -32768 || fieldId > 32767) {
+    throw new Error(`Invalid Thrift compact field id: ${fieldId}`)
+  }
+  return { fieldId, type }
+}
+
+function skipCompactValue(
+  reader: ThriftCompactReader,
+  type: number,
+  depth: number,
+): void {
+  if (depth > MAX_THRIFT_DEPTH) throw new Error('Thrift value exceeds maximum nesting depth')
+  switch (type) {
+    case COMPACT_TRUE:
+    case COMPACT_FALSE:
+    case 3:
+      reader.readByte()
+      return
+    case 4:
+      reader.readI16()
+      return
+    case 5:
+      reader.readI32()
+      return
+    case 6:
+      reader.readI64()
+      return
+    case 7:
+      reader.readDouble()
+      return
+    case 8:
+      reader.readString(true)
+      return
+    case 9:
+    case 10: {
+      const header = reader.readByte()
+      const sizeNibble = header >>> 4
+      const size = sizeNibble === 15 ? readCompactCollectionSize(reader) : sizeNibble
+      const itemType = header & 0x0f
+      for (let index = 0; index < size; index += 1) {
+        skipCompactValue(reader, itemType, depth + 1)
+      }
+      return
+    }
+    case 11: {
+      const size = readCompactCollectionSize(reader)
+      if (size === 0) return
+      const types = reader.readByte()
+      const keyType = types >>> 4
+      const valueType = types & 0x0f
+      for (let index = 0; index < size; index += 1) {
+        skipCompactValue(reader, keyType, depth + 1)
+        skipCompactValue(reader, valueType, depth + 1)
+      }
+      return
+    }
+    case 12:
+      skipCompactStruct(reader, depth + 1)
+      return
+    default:
+      throw new Error(`Unsupported Thrift compact type: ${type}`)
+  }
+}
+
+function readCompactValue(
+  reader: ThriftCompactReader,
+  type: ThriftType,
+  ast: ThriftAST,
+  depth: number,
+  fieldBool?: boolean,
+): unknown {
+  if (depth > MAX_THRIFT_DEPTH) throw new Error('Thrift value exceeds maximum nesting depth')
+  if (typeof type === 'string') {
+    if (ast.typedef?.[type]) {
+      return readCompactValue(reader, ast.typedef[type].type, ast, depth + 1, fieldBool)
+    }
+    switch (type) {
+      case 'bool':
+        return fieldBool ?? reader.readBool()
+      case 'byte':
+      case 'i8':
+        return reader.readByte() << 24 >> 24
+      case 'i16':
+        return reader.readI16()
+      case 'int':
+      case 'i32':
+        return reader.readI32()
+      case 'i64':
+        return reader.readI64()
+      case 'double':
+        return reader.readDouble()
+      case 'string':
+        return reader.readString(false)
+      case 'binary':
+        return reader.readString(true)
+      default: {
+        const enumInfo = ast.enum?.[type]
+        if (enumInfo) {
+          const value = reader.readI32()
+          return enumInfo.items.find((item) => item.value === value)?.name ?? value
+        }
+        if (ast.struct?.[type] || ast.exception?.[type] || ast.union?.[type]) {
+          return readCompactStruct(reader, type, ast, depth + 1)
+        }
+        throw new Error(`Unknown type: ${type}`)
+      }
+    }
+  }
+
+  switch (type.name) {
+    case 'list':
+    case 'set': {
+      const header = reader.readByte()
+      const sizeNibble = header >>> 4
+      const size = sizeNibble === 15 ? readCompactCollectionSize(reader) : sizeNibble
+      const itemType = header & 0x0f
+      assertCompactType(itemType, type.valueType, ast)
+      return Array.from({ length: size }, () =>
+        readCompactValue(reader, type.valueType, ast, depth + 1),
+      )
+    }
+    case 'map': {
+      const size = readCompactCollectionSize(reader)
+      if (size === 0) return {}
+      const types = reader.readByte()
+      const keyType = types >>> 4
+      const valueType = types & 0x0f
+      assertCompactType(keyType, type.keyType, ast)
+      assertCompactType(valueType, type.valueType, ast)
+      const result: Record<string, unknown> = Object.create(null)
+      for (let index = 0; index < size; index += 1) {
+        const key = readCompactValue(reader, type.keyType, ast, depth + 1)
+        result[String(key)] = readCompactValue(reader, type.valueType, ast, depth + 1)
+      }
+      return result
+    }
+  }
+}
+
+function skipCompactStruct(reader: ThriftCompactReader, depth: number): void {
+  let previousFieldId = 0
+  while (true) {
+    const { fieldId, type } = readCompactFieldHeader(reader, previousFieldId)
+    if (type === 0) return
+    previousFieldId = fieldId
+    if (type !== COMPACT_TRUE && type !== COMPACT_FALSE) {
+      skipCompactValue(reader, type, depth + 1)
+    }
+  }
+}
+
+function readCompactStruct(
+  reader: ThriftCompactReader,
+  structName: string,
+  ast: ThriftAST,
+  depth: number,
+): Record<string, unknown> {
+  if (depth > MAX_THRIFT_DEPTH) throw new Error('Thrift value exceeds maximum nesting depth')
+  const fields =
+    ast.struct?.[structName] ??
+    ast.exception?.[structName] ??
+    ast.union?.[structName]
+  if (!fields) throw new Error(`Unknown Thrift struct, exception, or union: ${structName}`)
+  const fieldsById = new Map(fields.map((field) => [field.id, field]))
+  const result: Record<string, unknown> = {}
+  let previousFieldId = 0
+
+  while (true) {
+    const { fieldId, type: compactType } = readCompactFieldHeader(reader, previousFieldId)
+    if (compactType === 0) return result
+    previousFieldId = fieldId
+    const field = fieldsById.get(fieldId)
+    if (!field) {
+      if (compactType !== COMPACT_TRUE && compactType !== COMPACT_FALSE) {
+        skipCompactValue(reader, compactType, depth + 1)
+      }
+      continue
+    }
+    assertCompactType(compactType, field.type, ast)
+    const boolValue =
+      isCompactBoolType(field.type, ast) &&
+      (compactType === COMPACT_TRUE || compactType === COMPACT_FALSE)
+        ? compactType === COMPACT_TRUE
+        : undefined
+    result[field.name] = readCompactValue(reader, field.type, ast, depth + 1, boolValue)
+  }
+}
+
+function decodeThriftCompact(
+  ast: ThriftAST,
+  structName: string,
+  buffer: Buffer,
+): Record<string, unknown> {
+  const reader = new ThriftCompactReader(buffer)
+  const result = readCompactStruct(reader, structName, ast, 0)
   if (reader.remaining !== 0) {
-    throw new Error(`Thrift message has ${reader.remaining} trailing byte(s)`)
+    throw new Error(`Thrift compact message has ${reader.remaining} trailing byte(s)`)
   }
   return result
 }

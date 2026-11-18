@@ -687,77 +687,48 @@ function KafkaJsonViewer({ value }: { value: string }) {
   );
 }
 
+interface KafkaThriftContract {
+  path: string;
+  content: string;
+}
+
 function KafkaMessageAccordion({
   message,
+  thriftContract,
+  thriftStructs,
+  loadingThriftContract,
+  thriftContractError,
+  onLoadThriftContract,
 }: {
   message: KafkaMessage;
+  thriftContract: KafkaThriftContract | null;
+  thriftStructs: string[];
+  loadingThriftContract: boolean;
+  thriftContractError: string | null;
+  onLoadThriftContract: () => void;
 }) {
   const [decodeOpen, setDecodeOpen] = useState(false);
-  const [idl, setIdl] = useState("");
-  const [contractFile, setContractFile] = useState("");
   const [contractName, setContractName] = useState("");
-  const [structs, setStructs] = useState<string[]>([]);
-  const [parsing, setParsing] = useState(false);
   const [decoding, setDecoding] = useState(false);
   const [decodedJson, setDecodedJson] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const detailsRef = useRef<HTMLDetailsElement>(null);
-  const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
-    if (!idl.trim()) {
-      setStructs([]);
-      setParsing(false);
-      setError(null);
-      return;
-    }
-
-    let cancelled = false;
-    setParsing(true);
-    api
-      .parseThriftIDL(idl)
-      .then((names) => {
-        if (cancelled) return;
-        setStructs(names);
-        setContractName(names.length === 1 ? names[0] : "");
-        setError(names.length ? null : "No structs found in the Thrift contract");
-      })
-      .catch((reason: unknown) => {
-        if (cancelled) return;
-        setStructs([]);
-        setContractName("");
-        setError(errorMessage(reason));
-      })
-      .finally(() => {
-        if (!cancelled) setParsing(false);
-      });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [idl]);
-
-  async function loadContract(file: File | undefined): Promise<void> {
-    if (!file) return;
-    try {
-      setIdl(await file.text());
-      setContractFile(file.name);
-      setDecodedJson(null);
-      setError(null);
-    } catch (reason) {
-      setError(`Could not read contract: ${errorMessage(reason)}`);
-    }
-  }
+    setContractName(thriftStructs.length === 1 ? thriftStructs[0] : "");
+    setDecodedJson(null);
+    setError(null);
+  }, [thriftContract?.path, thriftContract?.content, thriftStructs]);
 
   async function startDecode(): Promise<void> {
-    if (message.valueBase64 === null || !idl.trim() || !contractName) return;
+    if (message.valueBase64 === null || !thriftContract || !contractName) return;
     setDecoding(true);
     setError(null);
     setDecodedJson(null);
     try {
       const value = await api.decodeKafkaThrift(
         message.valueBase64,
-        idl,
+        thriftContract.content,
         contractName,
       );
       setDecodedJson(JSON.stringify(value, null, 2) ?? "null");
@@ -798,23 +769,22 @@ function KafkaMessageAccordion({
       {decodeOpen && (
         <div className="kafka-thrift-decoder">
           <div className="kafka-thrift-controls">
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept=".thrift,text/plain"
-              hidden
-              onChange={(event) => {
-                void loadContract(event.target.files?.[0]);
-                event.currentTarget.value = "";
-              }}
-            />
             <button
               className="btn"
-              onClick={() => fileInputRef.current?.click()}
+              onClick={onLoadThriftContract}
+              disabled={loadingThriftContract}
             >
-              Upload Thrift contract
+              {loadingThriftContract
+                ? "Loading contract…"
+                : thriftContract
+                  ? "Change Thrift contract"
+                  : "Upload Thrift contract"}
             </button>
-            {contractFile && <span className="muted">{contractFile}</span>}
+            {thriftContract && (
+              <span className="muted" title={thriftContract.path}>
+                {thriftContract.path.split(/[\\/]/).pop()}
+              </span>
+            )}
             <label className="field kafka-thrift-struct">
               <span>Struct</span>
               <select
@@ -824,10 +794,10 @@ function KafkaMessageAccordion({
                   setContractName(event.target.value);
                   setDecodedJson(null);
                 }}
-                disabled={!structs.length || parsing}
+                disabled={!thriftStructs.length || loadingThriftContract}
               >
                 <option value="">Select struct…</option>
-                {structs.map((name) => (
+                {thriftStructs.map((name) => (
                   <option key={name} value={name}>
                     {name}
                   </option>
@@ -839,15 +809,18 @@ function KafkaMessageAccordion({
               onClick={() => void startDecode()}
               disabled={
                 message.valueBase64 === null ||
+                !thriftContract ||
                 !contractName ||
-                parsing ||
+                loadingThriftContract ||
                 decoding
               }
             >
               {decoding ? "Decoding…" : "Start"}
             </button>
-            {parsing && <span className="muted">Reading contract…</span>}
           </div>
+          {thriftContractError && (
+            <div className="banner banner-error">{thriftContractError}</div>
+          )}
           {error && <div className="banner banner-error">{error}</div>}
           {decodedJson !== null && <KafkaJsonViewer value={decodedJson} />}
           {message.valueBase64 === null && (
@@ -1030,6 +1003,13 @@ export function KafkaWorkspace({ onClose }: { onClose: () => void }) {
   const [selectedConsumerGroupId, setSelectedConsumerGroupId] = useState("");
   const [selectedTopic, setSelectedTopic] = useState("");
   const [messages, setMessages] = useState<KafkaMessage[]>([]);
+  const [thriftContract, setThriftContract] =
+    useState<KafkaThriftContract | null>(null);
+  const [thriftStructs, setThriftStructs] = useState<string[]>([]);
+  const [loadingThriftContract, setLoadingThriftContract] = useState(false);
+  const [thriftContractError, setThriftContractError] = useState<string | null>(
+    null,
+  );
   const [totalMessages, setTotalMessages] = useState(0);
   const [search, setSearch] = useState("");
   const [searchResults, setSearchResults] = useState<KafkaMessage[] | null>(
@@ -1420,6 +1400,26 @@ export function KafkaWorkspace({ onClose }: { onClose: () => void }) {
     setError(null);
     await api.produceKafkaMessage(active.id, input);
     addToast(`Event sent to "${input.topic}"`, "success");
+  }
+
+  async function loadThriftContract(): Promise<void> {
+    setLoadingThriftContract(true);
+    setThriftContractError(null);
+    try {
+      const contract = await api.openKafkaThriftContract();
+      if (!contract) return;
+      setThriftContract(contract);
+      setThriftStructs([]);
+      const names = await api.parseThriftIDL(contract.content);
+      setThriftStructs(names);
+      if (!names.length) {
+        setThriftContractError("No structs found in the Thrift contract");
+      }
+    } catch (reason) {
+      setThriftContractError(errorMessage(reason));
+    } finally {
+      setLoadingThriftContract(false);
+    }
   }
 
   const paletteCommands = useKafkaPaletteCommands({
@@ -2017,6 +2017,11 @@ export function KafkaWorkspace({ onClose }: { onClose: () => void }) {
                     <KafkaMessageAccordion
                       key={`${message.topic}-${message.partition}-${message.offset}`}
                       message={message}
+                      thriftContract={thriftContract}
+                      thriftStructs={thriftStructs}
+                      loadingThriftContract={loadingThriftContract}
+                      thriftContractError={thriftContractError}
+                      onLoadThriftContract={() => void loadThriftContract()}
                     />
                   ))}
                   {selectedTopic &&

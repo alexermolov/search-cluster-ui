@@ -98,6 +98,7 @@ export const IPC = {
   KafkaSearch: 'kafka:search',
   KafkaSearchProgress: 'kafka:search-progress',
   KafkaMessageProduce: 'kafka:message-produce',
+  KafkaThriftContractOpen: 'kafka:thrift-contract-open',
   KafkaThriftParse: 'kafka:thrift-parse',
   KafkaThriftDecode: 'kafka:thrift-decode',
   RedisConnectionsList: 'redis:connections-list',
@@ -395,6 +396,7 @@ export interface ElectronApi {
     onProgress: (progress: KafkaSearchProgress) => void,
   ): Promise<KafkaSearchResult>
   produceKafkaMessage(connectionId: string, input: KafkaMessageProduceInput): Promise<void>
+  openKafkaThriftContract(): Promise<{ path: string; content: string } | null>
   parseThriftIDL(idl: string): Promise<string[]>
   decodeKafkaThrift(valueBase64: string, idl: string, structName: string): Promise<unknown>
   listRedisConnections(): Promise<StoredRedisConnection[]>
