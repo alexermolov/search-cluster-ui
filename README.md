@@ -18,7 +18,7 @@ Desktop-клиент для **Elasticsearch**, **OpenSearch**, **Apache Kafka** 
 | AWS SigV4 | собственная реализация (~60 строк) | не тянем aws-sdk ради одной подписи |
 | Хранение подключений | JSON в `userData` + `safeStorage` | пароли шифруются ключами ОС |
 
-Рантайм-зависимости — `react`, `react-dom`, `zustand`, `kafkajs` и `ioredis`.
+Рантайм-зависимости — `react`, `react-dom`, `zustand`, `kafkajs`, `ioredis` и `thrift-parser`.
 
 ## Установка
 

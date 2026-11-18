@@ -9,9 +9,7 @@
  *   list<T>, set<T>, map<K,V>, struct, exception, union, enum, typedef.
  */
 
-import { createRequire } from 'node:module'
-const thriftRequire = createRequire(__filename)
-const thriftParser = thriftRequire('thrift-parser')
+import thriftParser from 'thrift-parser'
 
 export interface ThriftAST {
   struct?: Record<string, ThriftField[]>
