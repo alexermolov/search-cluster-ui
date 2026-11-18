@@ -44,6 +44,11 @@ import {
   testKafkaConnection,
 } from './kafka'
 import {
+  decodeThriftBinary,
+  getThriftStructNames,
+  parseThriftIDL,
+} from './thrift'
+import {
   deleteRedisKey,
   dropRedisClient,
   fetchRedisServerInfo,
@@ -195,6 +200,31 @@ export function registerIpcHandlers(
   )
   ipcMain.handle(IPC.KafkaMessageProduce, (_e, id: string, input: KafkaMessageProduceInput) =>
     produceKafkaMessage(kafkaCache, kafkaConfigFor(id), input),
+  )
+  ipcMain.handle(IPC.KafkaThriftContractOpen, async () => {
+    const { canceled, filePaths } = await dialog.showOpenDialog({
+      properties: ['openFile'],
+      filters: [{ name: 'Thrift contracts', extensions: ['thrift'] }],
+    })
+    if (canceled || !filePaths[0]) return null
+    return {
+      path: filePaths[0],
+      content: await fs.readFile(filePaths[0], 'utf8'),
+    }
+  })
+  ipcMain.handle(IPC.KafkaThriftParse, (_e, idl: string) => {
+    const ast = parseThriftIDL(idl)
+    return getThriftStructNames(ast)
+  })
+  ipcMain.handle(
+    IPC.KafkaThriftDecode,
+    (_e, valueBase64: string, idl: string, structName: string) => {
+      if (!/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/.test(valueBase64)) {
+        throw new Error('Invalid encoded Thrift message')
+      }
+      const ast = parseThriftIDL(idl)
+      return decodeThriftBinary(ast, structName, Buffer.from(valueBase64, 'base64'))
+    },
   )
 
   ipcMain.handle(IPC.RedisConnectionsList, () => redisStore.list())

@@ -420,31 +420,102 @@ function KafkaTopicCreateDialog({
   );
 }
 
+type KafkaProduceDraft = {
+  key: string;
+  format: "raw" | "json" | "thrift";
+  value: string;
+  thriftIdl: string;
+  thriftStruct: string;
+};
+
+const EMPTY_KAFKA_PRODUCE_DRAFT: KafkaProduceDraft = {
+  key: "",
+  format: "json",
+  value: "{\n  \n}",
+  thriftIdl: "",
+  thriftStruct: "",
+};
+
 function KafkaProduceDialog({
   topic,
+  draft,
+  onDraftChange,
   onClose,
   onSend,
 }: {
   topic: string;
+  draft: KafkaProduceDraft;
+  onDraftChange: (patch: Partial<KafkaProduceDraft>) => void;
   onClose: () => void;
   onSend: (input: KafkaMessageProduceInput) => Promise<void>;
 }) {
-  const [key, setKey] = useState("");
-  const [value, setValue] = useState("{\n  \n}");
+  const [thriftStructs, setThriftStructs] = useState<string[]>([]);
+  const [thriftError, setThriftError] = useState<string | null>(null);
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const thriftStructRef = useRef(draft.thriftStruct);
+  thriftStructRef.current = draft.thriftStruct;
+
+  useEffect(() => {
+    if (draft.format !== "thrift" || !draft.thriftIdl.trim()) {
+      setThriftStructs([]);
+      setThriftError(null);
+      return;
+    }
+    let cancelled = false;
+    api
+      .parseThriftIDL(draft.thriftIdl)
+      .then((names) => {
+        if (cancelled) return;
+        setThriftStructs(names);
+        setThriftError(null);
+        if (names.length === 1) onDraftChange({ thriftStruct: names[0] });
+        else if (!names.includes(thriftStructRef.current)) {
+          onDraftChange({ thriftStruct: "" });
+        }
+      })
+      .catch((e: unknown) => {
+        if (cancelled) return;
+        setThriftStructs([]);
+        setThriftError(errorMessage(e));
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [draft.format, draft.thriftIdl, onDraftChange]);
 
   async function submit(): Promise<void> {
-    try {
-      JSON.parse(value);
-    } catch {
-      setError("Message value must be valid JSON");
-      return;
+    if (draft.format === "json" || draft.format === "thrift") {
+      try {
+        JSON.parse(draft.value);
+      } catch {
+        setError("Message value must be valid JSON");
+        return;
+      }
+    }
+    if (draft.format === "thrift") {
+      if (!draft.thriftIdl.trim()) {
+        setError("Thrift IDL is required");
+        return;
+      }
+      if (!draft.thriftStruct) {
+        setError("Please select a Thrift struct");
+        return;
+      }
     }
     setSending(true);
     setError(null);
     try {
-      await onSend({ topic, key: key || null, value });
+      await onSend({
+        topic,
+        key: draft.key || null,
+        value: draft.value,
+        format: draft.format,
+        thrift:
+          draft.format === "thrift"
+            ? { idl: draft.thriftIdl, structName: draft.thriftStruct }
+            : undefined,
+      });
       onClose();
     } catch (reason) {
       setError(errorMessage(reason));
@@ -462,24 +533,112 @@ function KafkaProduceDialog({
     >
       <div className="modal kafka-action-modal kafka-produce-modal">
         <h2>Send event to {topic}</h2>
-        <label className="field">
-          <span>Key (optional)</span>
-          <input
-            className="input mono"
-            value={key}
-            onChange={(event) => setKey(event.target.value)}
-          />
-        </label>
-        <div className="field">
-          <span>JSON value</span>
-          <JsonEditor
-            value={value}
-            onChange={setValue}
-            onRun={() => void submit()}
-            placeholder="Enter a JSON value"
-            minHeight="180px"
-          />
+        <div className="field-row">
+          <label className="field">
+            <span>Key (optional)</span>
+            <input
+              className="input mono"
+              value={draft.key}
+              onChange={(event) => onDraftChange({ key: event.target.value })}
+            />
+          </label>
+          <label className="field">
+            <span>Format</span>
+            <select
+              className="input"
+              value={draft.format}
+              onChange={(event) =>
+                onDraftChange({
+                  format: event.target.value as KafkaProduceDraft["format"],
+                })
+              }
+            >
+              <option value="json">JSON</option>
+              <option value="raw">Raw string</option>
+              <option value="thrift">Thrift</option>
+            </select>
+          </label>
         </div>
+
+        {draft.format === "raw" && (
+          <label className="field">
+            <span>Raw value</span>
+            <textarea
+              className="input mono"
+              value={draft.value}
+              onChange={(event) => onDraftChange({ value: event.target.value })}
+              rows={10}
+              placeholder="Free-form text"
+              style={{ minHeight: "180px", fontFamily: "monospace" }}
+            />
+          </label>
+        )}
+
+        {draft.format === "json" && (
+          <div className="field">
+            <span>JSON value</span>
+            <JsonEditor
+              value={draft.value}
+              onChange={(value) => onDraftChange({ value })}
+              onRun={() => void submit()}
+              placeholder="Enter a JSON value"
+              minHeight="180px"
+            />
+          </div>
+        )}
+
+        {draft.format === "thrift" && (
+          <>
+            <label className="field">
+              <span>Thrift IDL contract</span>
+              <textarea
+                className="input mono"
+                value={draft.thriftIdl}
+                onChange={(event) =>
+                  onDraftChange({ thriftIdl: event.target.value })
+                }
+                rows={8}
+                placeholder={`struct User {\n  1: required i32 id,\n  2: required string name\n}`}
+                style={{ minHeight: "140px", fontFamily: "monospace", fontSize: "12px" }}
+              />
+            </label>
+            {thriftError && (
+              <div className="banner banner-error" style={{ marginTop: -6 }}>
+                {thriftError}
+              </div>
+            )}
+            {thriftStructs.length > 0 && (
+              <label className="field">
+                <span>Struct / Exception / Union</span>
+                <select
+                  className="input"
+                  value={draft.thriftStruct}
+                  onChange={(event) =>
+                    onDraftChange({ thriftStruct: event.target.value })
+                  }
+                >
+                  <option value="">— Select —</option>
+                  {thriftStructs.map((name) => (
+                    <option key={name} value={name}>
+                      {name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            )}
+            <div className="field">
+              <span>JSON payload (will be serialized to Thrift binary)</span>
+              <JsonEditor
+                value={draft.value}
+                onChange={(value) => onDraftChange({ value })}
+                onRun={() => void submit()}
+                placeholder="Enter JSON matching the Thrift struct"
+                minHeight="160px"
+              />
+            </div>
+          </>
+        )}
+
         {error && <div className="banner banner-error">{error}</div>}
         <div className="modal-footer">
           <span className="spacer" />
@@ -525,6 +684,168 @@ function KafkaJsonViewer({ value }: { value: string }) {
         {copied ? "Copied!" : "Copy"}
       </button>
     </div>
+  );
+}
+
+interface KafkaThriftContract {
+  path: string;
+  content: string;
+}
+
+function KafkaMessageAccordion({
+  message,
+  thriftContract,
+  thriftStructs,
+  loadingThriftContract,
+  thriftContractError,
+  onLoadThriftContract,
+}: {
+  message: KafkaMessage;
+  thriftContract: KafkaThriftContract | null;
+  thriftStructs: string[];
+  loadingThriftContract: boolean;
+  thriftContractError: string | null;
+  onLoadThriftContract: () => void;
+}) {
+  const [decodeOpen, setDecodeOpen] = useState(false);
+  const [contractName, setContractName] = useState("");
+  const [decoding, setDecoding] = useState(false);
+  const [decodedJson, setDecodedJson] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const detailsRef = useRef<HTMLDetailsElement>(null);
+
+  useEffect(() => {
+    setContractName(thriftStructs.length === 1 ? thriftStructs[0] : "");
+    setDecodedJson(null);
+    setError(null);
+  }, [thriftContract?.path, thriftContract?.content, thriftStructs]);
+
+  async function startDecode(): Promise<void> {
+    if (message.valueBase64 === null || !thriftContract || !contractName) return;
+    setDecoding(true);
+    setError(null);
+    setDecodedJson(null);
+    try {
+      const value = await api.decodeKafkaThrift(
+        message.valueBase64,
+        thriftContract.content,
+        contractName,
+      );
+      setDecodedJson(JSON.stringify(value, null, 2) ?? "null");
+    } catch (reason) {
+      setError(errorMessage(reason));
+    } finally {
+      setDecoding(false);
+    }
+  }
+
+  return (
+    <details
+      className="kafka-message"
+      ref={detailsRef}
+    >
+      <summary className="kafka-message-meta">
+        <span>Partition {message.partition}</span>
+        <span>Offset {message.offset}</span>
+        <span>
+          {message.timestamp
+            ? new Date(Number(message.timestamp)).toLocaleString()
+            : "No timestamp"}
+        </span>
+        {message.key !== null && <span>Key: {message.key}</span>}
+        <button
+          className="btn kafka-decode-toggle"
+          aria-expanded={decodeOpen}
+          onClick={(event) => {
+            event.preventDefault();
+            event.stopPropagation();
+            if (detailsRef.current) detailsRef.current.open = true;
+            setDecodeOpen((open) => !open);
+          }}
+        >
+          Decode
+        </button>
+      </summary>
+      {decodeOpen && (
+        <div className="kafka-thrift-decoder">
+          <div className="kafka-thrift-controls">
+            <button
+              className="btn"
+              onClick={onLoadThriftContract}
+              disabled={loadingThriftContract}
+            >
+              {loadingThriftContract
+                ? "Loading contract…"
+                : thriftContract
+                  ? "Change Thrift contract"
+                  : "Upload Thrift contract"}
+            </button>
+            {thriftContract && (
+              <span className="muted" title={thriftContract.path}>
+                {thriftContract.path.split(/[\\/]/).pop()}
+              </span>
+            )}
+            <label className="field kafka-thrift-struct">
+              <span>Struct</span>
+              <select
+                className="input"
+                value={contractName}
+                onChange={(event) => {
+                  setContractName(event.target.value);
+                  setDecodedJson(null);
+                }}
+                disabled={!thriftStructs.length || loadingThriftContract}
+              >
+                <option value="">Select struct…</option>
+                {thriftStructs.map((name) => (
+                  <option key={name} value={name}>
+                    {name}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <button
+              className="btn btn-primary"
+              onClick={() => void startDecode()}
+              disabled={
+                message.valueBase64 === null ||
+                !thriftContract ||
+                !contractName ||
+                loadingThriftContract ||
+                decoding
+              }
+            >
+              {decoding ? "Decoding…" : "Start"}
+            </button>
+          </div>
+          {thriftContractError && (
+            <div className="banner banner-error">{thriftContractError}</div>
+          )}
+          {error && <div className="banner banner-error">{error}</div>}
+          {decodedJson !== null && <KafkaJsonViewer value={decodedJson} />}
+          {message.valueBase64 === null && (
+            <div className="muted">This event has no binary value to decode.</div>
+          )}
+        </div>
+      )}
+      <div className="kafka-message-body">
+        {message.value === null ? (
+          <pre>(null value)</pre>
+        ) : (
+          <KafkaJsonViewer value={message.value} />
+        )}
+        {Object.keys(message.headers).length > 0 && (
+          <details>
+            <summary>
+              Headers ({Object.keys(message.headers).length})
+            </summary>
+            <KafkaJsonViewer
+              value={JSON.stringify(message.headers, null, 2)}
+            />
+          </details>
+        )}
+      </div>
+    </details>
   );
 }
 
@@ -682,6 +1003,13 @@ export function KafkaWorkspace({ onClose }: { onClose: () => void }) {
   const [selectedConsumerGroupId, setSelectedConsumerGroupId] = useState("");
   const [selectedTopic, setSelectedTopic] = useState("");
   const [messages, setMessages] = useState<KafkaMessage[]>([]);
+  const [thriftContract, setThriftContract] =
+    useState<KafkaThriftContract | null>(null);
+  const [thriftStructs, setThriftStructs] = useState<string[]>([]);
+  const [loadingThriftContract, setLoadingThriftContract] = useState(false);
+  const [thriftContractError, setThriftContractError] = useState<string | null>(
+    null,
+  );
   const [totalMessages, setTotalMessages] = useState(0);
   const [search, setSearch] = useState("");
   const [searchResults, setSearchResults] = useState<KafkaMessage[] | null>(
@@ -705,6 +1033,9 @@ export function KafkaWorkspace({ onClose }: { onClose: () => void }) {
   >(undefined);
   const [creatingTopic, setCreatingTopic] = useState(false);
   const [producing, setProducing] = useState(false);
+  const [produceDraft, setProduceDraft] = useState<KafkaProduceDraft>(
+    EMPTY_KAFKA_PRODUCE_DRAFT,
+  );
   const [detailTopic, setDetailTopic] = useState<string | null>(null);
   const [partitions, setPartitions] = useState<KafkaPartitionInfo[]>([]);
   const [consumerGroups, setConsumerGroups] = useState<
@@ -717,6 +1048,12 @@ export function KafkaWorkspace({ onClose }: { onClose: () => void }) {
   const messageRequest = useRef(0);
   const searchRequest = useRef(0);
   const activeSearchId = useRef<string | null>(null);
+  const updateProduceDraft = useCallback(
+    (patch: Partial<KafkaProduceDraft>) => {
+      setProduceDraft((current) => ({ ...current, ...patch }));
+    },
+    [],
+  );
 
   const active =
     connections.find((connection) => connection.id === activeId) ?? null;
@@ -1063,6 +1400,26 @@ export function KafkaWorkspace({ onClose }: { onClose: () => void }) {
     setError(null);
     await api.produceKafkaMessage(active.id, input);
     addToast(`Event sent to "${input.topic}"`, "success");
+  }
+
+  async function loadThriftContract(): Promise<void> {
+    setLoadingThriftContract(true);
+    setThriftContractError(null);
+    try {
+      const contract = await api.openKafkaThriftContract();
+      if (!contract) return;
+      setThriftContract(contract);
+      setThriftStructs([]);
+      const names = await api.parseThriftIDL(contract.content);
+      setThriftStructs(names);
+      if (!names.length) {
+        setThriftContractError("No structs found in the Thrift contract");
+      }
+    } catch (reason) {
+      setThriftContractError(errorMessage(reason));
+    } finally {
+      setLoadingThriftContract(false);
+    }
   }
 
   const paletteCommands = useKafkaPaletteCommands({
@@ -1657,42 +2014,15 @@ export function KafkaWorkspace({ onClose }: { onClose: () => void }) {
                 )}
                 <div className="kafka-message-list">
                   {visibleMessages.map((message) => (
-                    <details
-                      className="kafka-message"
+                    <KafkaMessageAccordion
                       key={`${message.topic}-${message.partition}-${message.offset}`}
-                    >
-                      <summary className="kafka-message-meta">
-                        <span>Partition {message.partition}</span>
-                        <span>Offset {message.offset}</span>
-                        <span>
-                          {message.timestamp
-                            ? new Date(
-                                Number(message.timestamp),
-                              ).toLocaleString()
-                            : "No timestamp"}
-                        </span>
-                        {message.key !== null && (
-                          <span>Key: {message.key}</span>
-                        )}
-                      </summary>
-                      <div className="kafka-message-body">
-                        {message.value === null ? (
-                          <pre>(null value)</pre>
-                        ) : (
-                          <KafkaJsonViewer value={message.value} />
-                        )}
-                        {Object.keys(message.headers).length > 0 && (
-                          <details>
-                            <summary>
-                              Headers ({Object.keys(message.headers).length})
-                            </summary>
-                            <KafkaJsonViewer
-                              value={JSON.stringify(message.headers, null, 2)}
-                            />
-                          </details>
-                        )}
-                      </div>
-                    </details>
+                      message={message}
+                      thriftContract={thriftContract}
+                      thriftStructs={thriftStructs}
+                      loadingThriftContract={loadingThriftContract}
+                      thriftContractError={thriftContractError}
+                      onLoadThriftContract={() => void loadThriftContract()}
+                    />
                   ))}
                   {selectedTopic &&
                     !loadingMessages &&
@@ -1739,6 +2069,8 @@ export function KafkaWorkspace({ onClose }: { onClose: () => void }) {
       {producing && selectedTopic && (
         <KafkaProduceDialog
           topic={selectedTopic}
+          draft={produceDraft}
+          onDraftChange={updateProduceDraft}
           onClose={() => setProducing(false)}
           onSend={produceMessage}
         />

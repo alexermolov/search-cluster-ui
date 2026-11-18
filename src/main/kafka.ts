@@ -19,6 +19,8 @@ import type {
   KafkaTopicInfo,
   StoredKafkaConnection,
 } from '../shared/types'
+import { parseThriftIDL, serializeThriftBinary } from './thrift'
+import type { ThriftAST } from './thrift'
 
 export type KafkaConnection = KafkaConnectionInput | StoredKafkaConnection
 const KAFKA_OFFSET_CONCURRENCY = 8
@@ -438,16 +440,41 @@ export async function fetchKafkaConsumerGroups(
 export async function produceKafkaMessage(
   cache: KafkaClientCache,
   config: KafkaConnection,
-  { topic, key, value }: KafkaMessageProduceInput,
+  { topic, key, value, format, thrift }: KafkaMessageProduceInput,
 ): Promise<void> {
   if (!topic.trim()) throw new Error('A Kafka topic is required')
   if (!value) throw new Error('A message value is required')
+
+  let messageValue: string | Buffer = value
+  if (format === 'thrift') {
+    if (!thrift?.idl.trim()) throw new Error('Thrift IDL is required')
+    if (!thrift.structName) throw new Error('Thrift struct name is required')
+    let ast: ThriftAST
+    try {
+      ast = parseThriftIDL(thrift.idl)
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e)
+      throw new Error(`Invalid Thrift IDL: ${msg}`)
+    }
+    let data: unknown
+    try {
+      data = JSON.parse(value)
+    } catch {
+      throw new Error('Message value must be valid JSON for Thrift serialization')
+    }
+    try {
+      messageValue = serializeThriftBinary(ast, thrift.structName, data)
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e)
+      throw new Error(`Thrift serialization failed: ${msg}`)
+    }
+  }
 
   const client = cache.get(config)
   const producer = await client.producer()
   await producer.send({
     topic: topic.trim(),
-    messages: [{ ...(key !== null ? { key } : {}), value }],
+    messages: [{ ...(key !== null ? { key } : {}), value: messageValue }],
   })
 }
 
@@ -479,6 +506,7 @@ function toKafkaMessage({
     timestamp: message.timestamp || null,
     key: decode(message.key),
     value: decode(message.value),
+    valueBase64: message.value?.toString('base64') ?? null,
     headers,
   }
 }

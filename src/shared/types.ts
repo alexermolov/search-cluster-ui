@@ -43,6 +43,7 @@ export interface KafkaMessage {
   timestamp: string | null
   key: string | null
   value: string | null
+  valueBase64: string | null
   headers: Record<string, string | null>
 }
 
