@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import type { ThriftProfile } from "../../../shared/types";
 import { api, errorMessage } from "../api";
 
@@ -25,23 +25,7 @@ export function KafkaThriftProfilesDialog({
     ? profiles.find((p) => p.id === editingId) ?? null
     : null;
 
-  useEffect(() => {
-    if (editingProfile) {
-      setName(editingProfile.name);
-      setIdl(editingProfile.idl);
-      setStructName(editingProfile.structName);
-      setStructs([]);
-      setParseError(null);
-    } else if (editingId === "") {
-      setName("");
-      setIdl("");
-      setStructName("");
-      setStructs([]);
-      setParseError(null);
-    }
-  }, [editingId, editingProfile]);
-
-  async function parseIdl(value: string) {
+  const parseIdl = useCallback(async (value: string, preferredStruct?: string) => {
     if (!value.trim()) {
       setStructs([]);
       setParseError(null);
@@ -54,7 +38,11 @@ export function KafkaThriftProfilesDialog({
       setStructs(names);
       setStructName((prev) => {
         if (names.includes(prev)) return prev;
-        return names.length === 1 ? names[0] : "";
+        return preferredStruct && names.includes(preferredStruct)
+          ? preferredStruct
+          : names.length === 1
+            ? names[0]
+            : "";
       });
     } catch (e: unknown) {
       setStructs([]);
@@ -62,7 +50,24 @@ export function KafkaThriftProfilesDialog({
     } finally {
       setParsing(false);
     }
-  }
+  }, []);
+
+  useEffect(() => {
+    if (editingProfile) {
+      setName(editingProfile.name);
+      setIdl(editingProfile.idl);
+      setStructName(editingProfile.structName);
+      setStructs([]);
+      setParseError(null);
+      void parseIdl(editingProfile.idl, editingProfile.structName);
+    } else if (editingId === "") {
+      setName("");
+      setIdl("");
+      setStructName("");
+      setStructs([]);
+      setParseError(null);
+    }
+  }, [editingId, editingProfile, parseIdl]);
 
   function save() {
     if (!name.trim() || !idl.trim() || !structName) return;
@@ -145,6 +150,7 @@ export function KafkaThriftProfilesDialog({
                 className="input mono"
                 value={idl}
                 onChange={(event) => setIdl(event.target.value)}
+                onBlur={() => void parseIdl(idl, structName)}
                 rows={8}
                 placeholder={`struct User {\n  1: required i32 id,\n  2: required string name\n}`}
                 style={{
@@ -156,7 +162,7 @@ export function KafkaThriftProfilesDialog({
             </label>
             <button
               className="btn"
-              onClick={() => void parseIdl(idl)}
+              onClick={() => void parseIdl(idl, structName)}
               disabled={parsing || !idl.trim()}
             >
               {parsing ? "Parsing…" : "Parse structs"}
