@@ -425,3 +425,10 @@ export interface DataStreamBackingIndex {
   writeIndex: boolean
   status: string | null
 }
+
+export interface ThriftProfile {
+  id: string
+  name: string
+  idl: string
+  structName: string
+}

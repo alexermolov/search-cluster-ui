@@ -3287,3 +3287,68 @@ button.dropdown-item {
     max-height: 85vh;
     overflow: auto;
 }
+
+/* ---------- Kafka Thrift profiles ---------- */
+
+.kafka-profiles-modal {
+    width: min(560px, 94vw);
+}
+
+.kafka-profiles-list {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    margin-bottom: 12px;
+    max-height: 240px;
+    overflow-y: auto;
+}
+
+.kafka-profile-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 8px 10px;
+    border: 1px solid var(--border-soft);
+    border-radius: var(--radius);
+    background: var(--bg);
+}
+
+.kafka-profile-info {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 0;
+}
+
+.kafka-profile-info strong {
+    font-size: 13px;
+}
+
+.kafka-profile-actions {
+    display: flex;
+    gap: 6px;
+    flex-shrink: 0;
+}
+
+.kafka-profile-form {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.kafka-profile-select {
+    min-width: 160px;
+}
+
+.kafka-struct-select {
+    min-width: 160px;
+}
+
+.kafka-thrift-decoded {
+    margin: 0 0 12px;
+    padding: 10px;
+    border: 1px solid var(--border-soft);
+    border-radius: var(--radius);
+    background: var(--bg);
+}
