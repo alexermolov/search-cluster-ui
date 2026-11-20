@@ -1944,6 +1944,31 @@ textarea.input {
     color: #fff;
 }
 
+.json-collapsible {
+    font-family: inherit;
+}
+
+.json-toggle {
+    cursor: pointer;
+    user-select: none;
+    margin-right: 0.25em;
+    display: inline-block;
+    width: 1em;
+    text-align: center;
+    color: var(--text-dim);
+    font-size: 0.85em;
+    line-height: 1;
+}
+
+.json-toggle:hover {
+    color: var(--text);
+}
+
+.json-collapsed-preview {
+    color: var(--text-dim);
+    font-style: italic;
+}
+
 /* ---------- Modal ---------- */
 
 .modal-backdrop {

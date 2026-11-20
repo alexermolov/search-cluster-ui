@@ -708,7 +708,7 @@ function KafkaJsonViewer({ value }: { value: string }) {
   return (
     <div className="kafka-json-view">
       <pre>
-        <JsonView value={value} />
+        <JsonView value={value} collapsible />
       </pre>
       <button
         className="json-copy-btn"

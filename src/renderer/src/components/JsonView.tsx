@@ -1,4 +1,5 @@
-// Lightweight JSON syntax highlighting for read-only output (no CodeMirror).
+import { Fragment, useState } from "react";
+import type { ReactNode } from "react";
 
 const TOKEN_RE =
   /"(?:[^"\\]|\\.)*"(?=\s*:)|"(?:[^"\\]|\\.)*"|-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?|\b(?:true|false|null)\b|[{}[\],:]/g;
@@ -56,6 +57,7 @@ interface Props {
   value: unknown;
   highlights?: Record<string, string[]>;
   onQuickQuery?: (field: string, value: string | number | boolean) => void;
+  collapsible?: boolean;
 }
 
 interface JsonLineQuery {
@@ -123,8 +125,407 @@ function getLineQueries(
   });
 }
 
+/* ========== Collapsible helpers ========== */
+
+function getScalarValue(
+  v: unknown,
+): string | number | boolean | null {
+  if (
+    v === null ||
+    typeof v === "string" ||
+    typeof v === "number" ||
+    typeof v === "boolean"
+  ) {
+    return v;
+  }
+  return null;
+}
+
+interface HighlightedStringProps {
+  value: string;
+  markers?: { open: string; close: string };
+}
+
+function HighlightedString({ value, markers }: HighlightedStringProps) {
+  if (!markers || !value.includes(markers.open)) {
+    return <>{value}</>;
+  }
+  const parts = value.split(markers.open);
+  return (
+    <>
+      {parts.map((part, i) => {
+        if (i === 0) return <span key={i}>{part}</span>;
+        const [highlighted, ...rest] = part.split(markers.close);
+        return (
+          <Fragment key={i}>
+            <mark className="json-highlight">{highlighted}</mark>
+            {rest.join(markers.close)}
+          </Fragment>
+        );
+      })}
+    </>
+  );
+}
+
+interface JsonNodeProps {
+  value: unknown;
+  depth: number;
+  path: string[];
+  queryPath?: string[];
+  markers?: { open: string; close: string };
+  onQuickQuery?: (field: string, value: string | number | boolean) => void;
+  excludedRootKey?: string;
+}
+
+function JsonCollapsibleNode({
+  value,
+  depth,
+  path,
+  queryPath,
+  markers,
+  onQuickQuery,
+  excludedRootKey,
+}: JsonNodeProps): ReactNode {
+  if (value === null) {
+    return <span className="tok-null">null</span>;
+  }
+
+  if (typeof value === "boolean") {
+    return <span className="tok-bool">{String(value)}</span>;
+  }
+
+  if (typeof value === "number") {
+    return <span className="tok-num">{value}</span>;
+  }
+
+  if (typeof value === "string") {
+    const isExcluded =
+      excludedRootKey != null && path.length > 0 && path[0] === excludedRootKey;
+
+    if (isExcluded) {
+      // Highlight values are rendered as JSON strings with possible markers.
+      return (
+        <span className="tok-str">
+          &quot;
+          <HighlightedString value={value} markers={markers} />
+          &quot;
+        </span>
+      );
+    }
+
+    return (
+      <span className="tok-str">
+        <HighlightedString value={JSON.stringify(value)} markers={markers} />
+      </span>
+    );
+  }
+
+  if (Array.isArray(value)) {
+    if (value.length === 0) return <span>[]</span>;
+    return (
+      <JsonCollapsibleArray
+        value={value}
+        depth={depth}
+        path={path}
+        queryPath={queryPath}
+        markers={markers}
+        onQuickQuery={onQuickQuery}
+        excludedRootKey={excludedRootKey}
+      />
+    );
+  }
+
+  if (typeof value === "object") {
+    const keys = Object.keys(value);
+    if (keys.length === 0) return <span>{"{}"}</span>;
+    return (
+      <JsonCollapsibleObject
+        value={value as Record<string, unknown>}
+        depth={depth}
+        path={path}
+        queryPath={queryPath}
+        markers={markers}
+        onQuickQuery={onQuickQuery}
+        excludedRootKey={excludedRootKey}
+      />
+    );
+  }
+
+  return null;
+}
+
+function JsonCollapsibleObject({
+  value,
+  depth,
+  path,
+  queryPath,
+  markers,
+  onQuickQuery,
+  excludedRootKey,
+}: JsonNodeProps & { value: Record<string, unknown> }) {
+  const [expanded, setExpanded] = useState(true);
+  const keys = Object.keys(value);
+  const isExcluded =
+    excludedRootKey != null && path.length > 0 && path[0] === excludedRootKey;
+
+  return (
+    <>
+      <span
+        className="json-toggle"
+        onClick={() => setExpanded(!expanded)}
+        role="button"
+        tabIndex={0}
+        aria-expanded={expanded}
+        onKeyDown={(e) => {
+          if (e.key === "Enter" || e.key === " ") {
+            e.preventDefault();
+            setExpanded(!expanded);
+          }
+        }}
+      >
+        {expanded ? "▼" : "▶"}
+      </span>
+      {"{"}
+      {!expanded && (
+        <>
+          {" "}
+          <span className="json-collapsed-preview">{keys.length} keys</span>{" "}
+        </>
+      )}
+      {expanded && (
+        <>
+          {keys.map((key, i) => {
+            const childPath = [...path, key];
+            const childQueryPath = [...(queryPath ?? path), key];
+            const childValue = value[key];
+            const scalar = getScalarValue(childValue);
+            const showQuickQuery =
+              !isExcluded && scalar !== null && onQuickQuery != null;
+
+            return (
+              <div
+                key={key}
+                className="json-line"
+                style={{ paddingLeft: `${(depth + 1) * 2}ch` }}
+              >
+                <span className="tok-key">{JSON.stringify(key)}</span>
+                {": "}
+                <JsonCollapsibleNode
+                  value={childValue}
+                  depth={depth + 1}
+                  path={childPath}
+                  queryPath={childQueryPath}
+                  markers={markers}
+                  onQuickQuery={onQuickQuery}
+                  excludedRootKey={excludedRootKey}
+                />
+                {i < keys.length - 1 ? "," : ""}
+                {showQuickQuery && (
+                  <button
+                    type="button"
+                    className="json-quick-query"
+                    title={`Query ${childQueryPath.join(".")} with match`}
+                    aria-label={`Query ${childQueryPath.join(".")} with match`}
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      onQuickQuery!(childQueryPath.join("."), scalar!);
+                    }}
+                  >
+                    ⌕
+                  </button>
+                )}
+              </div>
+            );
+          })}
+          <div
+            className="json-line"
+            style={{ paddingLeft: `${depth * 2}ch` }}
+          >
+            {"}"}
+          </div>
+        </>
+      )}
+      {!expanded && "}"}
+    </>
+  );
+}
+
+function JsonCollapsibleArray({
+  value,
+  depth,
+  path,
+  queryPath,
+  markers,
+  onQuickQuery,
+  excludedRootKey,
+}: JsonNodeProps & { value: unknown[] }) {
+  const [expanded, setExpanded] = useState(true);
+  const isExcluded =
+    excludedRootKey != null && path.length > 0 && path[0] === excludedRootKey;
+
+  return (
+    <>
+      <span
+        className="json-toggle"
+        onClick={() => setExpanded(!expanded)}
+        role="button"
+        tabIndex={0}
+        aria-expanded={expanded}
+        onKeyDown={(e) => {
+          if (e.key === "Enter" || e.key === " ") {
+            e.preventDefault();
+            setExpanded(!expanded);
+          }
+        }}
+      >
+        {expanded ? "▼" : "▶"}
+      </span>
+      {"["}
+      {!expanded && (
+        <>
+          {" "}
+          <span className="json-collapsed-preview">
+            {value.length} items
+          </span>{" "}
+        </>
+      )}
+      {expanded && (
+        <>
+          {value.map((item, i) => {
+            const childPath = [...path, String(i)];
+            // For arrays, quick query uses the array's field path, not the index.
+            const childQueryPath = queryPath ?? path;
+            const scalar = getScalarValue(item);
+            const showQuickQuery =
+              !isExcluded && scalar !== null && onQuickQuery != null;
+
+            return (
+              <div
+                key={i}
+                className="json-line"
+                style={{ paddingLeft: `${(depth + 1) * 2}ch` }}
+              >
+                <JsonCollapsibleNode
+                  value={item}
+                  depth={depth + 1}
+                  path={childPath}
+                  queryPath={childQueryPath}
+                  markers={markers}
+                  onQuickQuery={onQuickQuery}
+                  excludedRootKey={excludedRootKey}
+                />
+                {i < value.length - 1 ? "," : ""}
+                {showQuickQuery && (
+                  <button
+                    type="button"
+                    className="json-quick-query"
+                    title={`Query ${childQueryPath.join(".")} with match`}
+                    aria-label={`Query ${childQueryPath.join(".")} with match`}
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      onQuickQuery!(childQueryPath.join("."), scalar!);
+                    }}
+                  >
+                    ⌕
+                  </button>
+                )}
+              </div>
+            );
+          })}
+          <div
+            className="json-line"
+            style={{ paddingLeft: `${depth * 2}ch` }}
+          >
+            {"]"}
+          </div>
+        </>
+      )}
+      {!expanded && "]"}
+    </>
+  );
+}
+
 /** Render JSON (object or pre-serialized string) with token colors. */
-export function JsonView({ value, highlights, onQuickQuery }: Props) {
+export function JsonView({
+  value,
+  highlights,
+  onQuickQuery,
+  collapsible,
+}: Props) {
+  // ----- collapsible (interactive) mode -----
+  if (collapsible) {
+    let parsedValue: unknown;
+    if (typeof value === "string") {
+      try {
+        parsedValue = JSON.parse(value);
+      } catch {
+        return <pre>{value}</pre>;
+      }
+    } else {
+      parsedValue = value;
+    }
+
+    let renderValue = parsedValue;
+    let excludedRootKey: string | undefined;
+    let activeMarkers: { open: string; close: string } | undefined;
+
+    if (
+      highlights != null &&
+      typeof parsedValue === "object" &&
+      parsedValue !== null &&
+      !Array.isArray(parsedValue)
+    ) {
+      const rawFragments = Object.values(highlights).flat();
+      const markerSource = `${JSON.stringify(parsedValue)}${rawFragments.join("")}`;
+      let markerIndex = 0;
+      let markerPair: { open: string; close: string };
+      do {
+        markerPair = {
+          open: `__SEARCH_CLUSTER_HIGHLIGHT_OPEN_${markerIndex}__`,
+          close: `__SEARCH_CLUSTER_HIGHLIGHT_CLOSE_${markerIndex}__`,
+        };
+        markerIndex += 1;
+      } while (
+        markerSource.includes(markerPair.open) ||
+        markerSource.includes(markerPair.close)
+      );
+      activeMarkers = markerPair;
+
+      const highlighted = Object.fromEntries(
+        Object.entries(highlights).map(([field, fragments]) => [
+          field,
+          fragments.map((fragment) =>
+            fragment
+              .replace(/<em>/gi, markerPair.open)
+              .replace(/<\/em>/gi, markerPair.close),
+          ),
+        ]),
+      );
+      const highlightKey = Object.prototype.hasOwnProperty.call(
+        parsedValue,
+        "_highlight",
+      )
+        ? "_search_highlight"
+        : "_highlight";
+      excludedRootKey = highlightKey;
+      renderValue = { ...parsedValue, [highlightKey]: highlighted };
+    }
+
+    return (
+      <div className="json-collapsible">
+        <JsonCollapsibleNode
+          value={renderValue}
+          depth={0}
+          path={[]}
+          markers={activeMarkers}
+          onQuickQuery={onQuickQuery}
+          excludedRootKey={excludedRootKey}
+        />
+      </div>
+    );
+  }
+
+  // ----- plain (non-interactive) mode -----
   let text: string;
   let markers: { open: string; close: string } | undefined;
   let excludedRootKey: string | undefined;
