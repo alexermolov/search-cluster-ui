@@ -6,6 +6,7 @@ import {
   IPC,
   type BulkInput,
   type ExplainInput,
+  type KafkaBatchProduceInput,
   type KafkaMessageProduceInput,
   type KafkaMessagesInput,
   type KafkaSearchInput,
@@ -40,6 +41,7 @@ import {
   searchKafkaMessages,
   fetchKafkaTopicPartitions,
   listKafkaTopics,
+  produceKafkaBatch,
   produceKafkaMessage,
   testKafkaConnection,
 } from './kafka'
@@ -200,6 +202,9 @@ export function registerIpcHandlers(
   )
   ipcMain.handle(IPC.KafkaMessageProduce, (_e, id: string, input: KafkaMessageProduceInput) =>
     produceKafkaMessage(kafkaCache, kafkaConfigFor(id), input),
+  )
+  ipcMain.handle(IPC.KafkaBatchProduce, (_e, id: string, input: KafkaBatchProduceInput) =>
+    produceKafkaBatch(kafkaCache, kafkaConfigFor(id), input),
   )
   ipcMain.handle(IPC.KafkaThriftContractOpen, async () => {
     const { canceled, filePaths } = await dialog.showOpenDialog({

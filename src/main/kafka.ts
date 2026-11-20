@@ -14,6 +14,7 @@ import snappy from 'snappyjs'
   decompress: async (buffer: Buffer) => Buffer.from(snappy.uncompress(buffer)),
 })
 import type {
+  KafkaBatchProduceInput,
   KafkaMessageProduceInput,
   KafkaMessagesInput,
   KafkaSearchInput,
@@ -450,15 +451,11 @@ export async function fetchKafkaConsumerGroups(
     })
 }
 
-export async function produceKafkaMessage(
-  cache: KafkaClientCache,
-  config: KafkaConnection,
-  { topic, key, value, format, thrift }: KafkaMessageProduceInput,
-): Promise<void> {
-  if (!topic.trim()) throw new Error('A Kafka topic is required')
-  if (!value) throw new Error('A message value is required')
-
-  let messageValue: string | Buffer = value
+async function buildMessageValue(
+  value: string,
+  format?: 'raw' | 'json' | 'thrift',
+  thrift?: { idl: string; structName: string },
+): Promise<string | Buffer> {
   if (format === 'thrift') {
     if (!thrift?.idl.trim()) throw new Error('Thrift IDL is required')
     if (!thrift.structName) throw new Error('Thrift struct name is required')
@@ -476,12 +473,24 @@ export async function produceKafkaMessage(
       throw new Error('Message value must be valid JSON for Thrift serialization')
     }
     try {
-      messageValue = serializeThriftBinary(ast, thrift.structName, data)
+      return serializeThriftBinary(ast, thrift.structName, data)
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e)
       throw new Error(`Thrift serialization failed: ${msg}`)
     }
   }
+  return value
+}
+
+export async function produceKafkaMessage(
+  cache: KafkaClientCache,
+  config: KafkaConnection,
+  { topic, key, value, format, thrift }: KafkaMessageProduceInput,
+): Promise<void> {
+  if (!topic.trim()) throw new Error('A Kafka topic is required')
+  if (!value) throw new Error('A message value is required')
+
+  const messageValue = await buildMessageValue(value, format, thrift)
 
   const client = cache.get(config)
   const producer = await client.producer()
@@ -489,6 +498,85 @@ export async function produceKafkaMessage(
     topic: topic.trim(),
     messages: [{ ...(key !== null ? { key } : {}), value: messageValue }],
   })
+}
+
+export async function produceKafkaBatch(
+  cache: KafkaClientCache,
+  config: KafkaConnection,
+  input: KafkaBatchProduceInput,
+): Promise<{ sent: number; failed: number; errors: string[]; tookMs: number }> {
+  if (!input.topic.trim()) throw new Error('A Kafka topic is required')
+  if (!input.value) throw new Error('A message value is required')
+  if (input.count <= 0) throw new Error('Event count must be greater than 0')
+  if (input.threads <= 0) throw new Error('Threads must be greater than 0')
+  if (input.batchSize <= 0) throw new Error('Batch size must be greater than 0')
+
+  // Pre-serialize once for non-thrift; thrift needs per-message serialization
+  // because ${i} placeholder may change the JSON payload.
+  const hasVariable = input.value.includes('${i}') || (input.key?.includes('${i}') ?? false)
+
+  const thriftAst =
+    input.format === 'thrift' && input.thrift
+      ? parseThriftIDL(input.thrift.idl)
+      : null
+
+  let cachedValue: string | Buffer | undefined
+  if (!hasVariable) {
+    cachedValue = await buildMessageValue(input.value, input.format, input.thrift)
+  }
+
+  const encode = (rawValue: string): string | Buffer => {
+    if (cachedValue !== undefined) return cachedValue
+    if (thriftAst && input.thrift) {
+      return serializeThriftBinary(thriftAst, input.thrift.structName, JSON.parse(rawValue))
+    }
+    return rawValue
+  }
+
+  const client = cache.get(config)
+  const producer = await client.producer()
+
+  const { topic, count, threads, batchSize, key } = input
+  const startTime = Date.now()
+
+  const totalBatches = Math.ceil(count / batchSize)
+
+  const worker = async (workerId: number): Promise<{ sent: number; failed: number; errors: string[] }> => {
+    let wSent = 0
+    let wFailed = 0
+    const wErrors: string[] = []
+    for (let batchId = workerId; batchId < totalBatches; batchId += threads) {
+      const start = batchId * batchSize
+      const end = Math.min(start + batchSize, count)
+      const messages: { key?: string; value: string | Buffer }[] = []
+      for (let i = start; i < end; i++) {
+        const idx = i + 1
+        const value = hasVariable ? input.value.replace(/\${i}/g, String(idx)) : input.value
+        const finalKey = key
+          ? (hasVariable ? key.replace(/\${i}/g, String(idx)) : key)
+          : undefined
+        messages.push({ ...(finalKey !== undefined ? { key: finalKey } : {}), value: encode(value) })
+      }
+      try {
+        await producer.send({ topic: topic.trim(), messages })
+        wSent += messages.length
+      } catch (err) {
+        wFailed += messages.length
+        wErrors.push(String(err))
+      }
+    }
+    return { sent: wSent, failed: wFailed, errors: wErrors }
+  }
+
+  try {
+    const results = await Promise.all(Array.from({ length: threads }, (_, i) => worker(i)))
+    const sent = results.reduce((sum, r) => sum + r.sent, 0)
+    const failed = results.reduce((sum, r) => sum + r.failed, 0)
+    const errors = results.flatMap((r) => r.errors)
+    return { sent, failed, errors, tookMs: Date.now() - startTime }
+  } finally {
+    await producer.disconnect()
+  }
 }
 
 function decode(buffer: Buffer | null): string | null {

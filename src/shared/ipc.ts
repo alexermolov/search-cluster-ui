@@ -98,6 +98,7 @@ export const IPC = {
   KafkaSearch: 'kafka:search',
   KafkaSearchProgress: 'kafka:search-progress',
   KafkaMessageProduce: 'kafka:message-produce',
+  KafkaBatchProduce: 'kafka:batch-produce',
   KafkaThriftContractOpen: 'kafka:thrift-contract-open',
   KafkaThriftParse: 'kafka:thrift-parse',
   KafkaThriftDecode: 'kafka:thrift-decode',
@@ -190,6 +191,17 @@ export interface KafkaMessageProduceInput {
   value: string
   format?: 'raw' | 'json' | 'thrift'
   thrift?: { idl: string; structName: string }
+}
+
+export interface KafkaBatchProduceInput {
+  topic: string
+  key: string | null
+  value: string
+  format?: 'raw' | 'json' | 'thrift'
+  thrift?: { idl: string; structName: string }
+  count: number
+  threads: number
+  batchSize: number
 }
 
 export interface RedisKeysScanInput {
@@ -396,6 +408,7 @@ export interface ElectronApi {
     onProgress: (progress: KafkaSearchProgress) => void,
   ): Promise<KafkaSearchResult>
   produceKafkaMessage(connectionId: string, input: KafkaMessageProduceInput): Promise<void>
+  produceKafkaBatch(connectionId: string, input: KafkaBatchProduceInput): Promise<{ sent: number; failed: number; errors: string[]; tookMs: number }>
   openKafkaThriftContract(): Promise<{ path: string; content: string } | null>
   parseThriftIDL(idl: string): Promise<string[]>
   decodeKafkaThrift(valueBase64: string, idl: string, structName: string): Promise<unknown>

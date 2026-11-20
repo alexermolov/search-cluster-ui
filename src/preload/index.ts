@@ -118,6 +118,8 @@ const api: ElectronApi = {
   },
   produceKafkaMessage: (connectionId, input) =>
     ipcRenderer.invoke(IPC.KafkaMessageProduce, connectionId, input),
+  produceKafkaBatch: (connectionId, input) =>
+    ipcRenderer.invoke(IPC.KafkaBatchProduce, connectionId, input),
   openKafkaThriftContract: () =>
     ipcRenderer.invoke(IPC.KafkaThriftContractOpen),
   parseThriftIDL: (idl) => ipcRenderer.invoke(IPC.KafkaThriftParse, idl),

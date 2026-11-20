@@ -12,6 +12,7 @@ import type {
   ThriftProfile,
 } from "../../../shared/types";
 import type {
+  KafkaBatchProduceInput,
   KafkaMessageProduceInput,
   KafkaTopicCreateInput,
 } from "../../../shared/ipc";
@@ -21,6 +22,10 @@ import { JsonView } from "./JsonView";
 import { CommandPalettePanel, useKafkaPaletteCommands } from "./CommandPalette";
 import { addToast } from "../toasts";
 import { KafkaThriftProfilesDialog } from "./KafkaThriftProfilesDialog";
+import {
+  KafkaBatchSendDialog,
+  type KafkaBatchProduceDraft,
+} from "./KafkaBatchSendDialog";
 
 const EMPTY_TLS: KafkaTlsConfig = {
   enabled: false,
@@ -1024,6 +1029,13 @@ export function KafkaWorkspace({ onClose }: { onClose: () => void }) {
   const [produceDraft, setProduceDraft] = useState<KafkaProduceDraft>(
     EMPTY_KAFKA_PRODUCE_DRAFT,
   );
+  const [batchProducing, setBatchProducing] = useState(false);
+  const [batchDraft, setBatchDraft] = useState<KafkaBatchProduceDraft>({
+    ...EMPTY_KAFKA_PRODUCE_DRAFT,
+    count: 1000,
+    threads: 4,
+    batchSize: 500,
+  });
   const [detailTopic, setDetailTopic] = useState<string | null>(null);
   const [partitions, setPartitions] = useState<KafkaPartitionInfo[]>([]);
   const [consumerGroups, setConsumerGroups] = useState<
@@ -1039,6 +1051,12 @@ export function KafkaWorkspace({ onClose }: { onClose: () => void }) {
   const updateProduceDraft = useCallback(
     (patch: Partial<KafkaProduceDraft>) => {
       setProduceDraft((current) => ({ ...current, ...patch }));
+    },
+    [],
+  );
+  const updateBatchProduceDraft = useCallback(
+    (patch: Partial<KafkaBatchProduceDraft>) => {
+      setBatchDraft((current) => ({ ...current, ...patch }));
     },
     [],
   );
@@ -1388,6 +1406,18 @@ export function KafkaWorkspace({ onClose }: { onClose: () => void }) {
     setError(null);
     await api.produceKafkaMessage(active.id, input);
     addToast(`Event sent to "${input.topic}"`, "success");
+  }
+  async function produceBatch(
+    input: KafkaBatchProduceInput,
+  ): Promise<{ sent: number; failed: number; errors: string[]; tookMs: number }> {
+    if (!active) throw new Error("No Kafka connection selected");
+    setError(null);
+    const result = await api.produceKafkaBatch(active.id, input);
+    addToast(
+      `Batch sent: ${result.sent.toLocaleString()} messages in ${result.tookMs}ms`,
+      "success",
+    );
+    return result;
   }
 
   const selectedProfile = useMemo(
@@ -2001,6 +2031,13 @@ export function KafkaWorkspace({ onClose }: { onClose: () => void }) {
                       >
                         Send event
                       </button>
+                      <button
+                        className="btn"
+                        onClick={() => setBatchProducing(true)}
+                        disabled={!selectedTopic}
+                      >
+                        Batch send
+                      </button>
                     </div>
                   </div>
                   <div className="kafka-tool-group">
@@ -2138,6 +2175,16 @@ export function KafkaWorkspace({ onClose }: { onClose: () => void }) {
           onDraftChange={updateProduceDraft}
           onClose={() => setProducing(false)}
           onSend={produceMessage}
+        />
+      )}
+      {batchProducing && selectedTopic && (
+        <KafkaBatchSendDialog
+          topic={selectedTopic}
+          draft={batchDraft}
+          profiles={profiles}
+          onDraftChange={updateBatchProduceDraft}
+          onClose={() => setBatchProducing(false)}
+          onSend={produceBatch}
         />
       )}
       {profilesOpen && (
