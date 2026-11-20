@@ -3,6 +3,7 @@ import type { ThriftProfile } from "../../../shared/types";
 import type { KafkaBatchProduceInput } from "../../../shared/ipc";
 import { api, errorMessage } from "../api";
 import { JsonEditor } from "./JsonEditor";
+import { BatchSendHelpDialog } from "./BatchSendHelpDialog";
 
 export type KafkaBatchProduceDraft = {
   key: string;
@@ -27,6 +28,8 @@ interface Props {
   ) => Promise<{ sent: number; failed: number; errors: string[]; tookMs: number }>;
 }
 
+
+
 export function KafkaBatchSendDialog({
   topic,
   draft,
@@ -45,6 +48,7 @@ export function KafkaBatchSendDialog({
     errors: string[];
     tookMs: number;
   } | null>(null);
+  const [helpOpen, setHelpOpen] = useState(false);
   const thriftStructRef = useRef(draft.thriftStruct);
   thriftStructRef.current = draft.thriftStruct;
 
@@ -153,8 +157,17 @@ export function KafkaBatchSendDialog({
         if (e.target === e.currentTarget) onClose();
       }}
     >
-      <div className="modal kafka-action-modal kafka-produce-modal">
-        <h2>Batch send to {topic}</h2>
+        <div className="modal kafka-action-modal kafka-produce-modal">
+          <h2 style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12 }}>
+            <span>Batch send to {topic}</span>
+            <button
+              className="btn btn-sm batch-help-btn"
+              title="Variables help"
+              onClick={() => setHelpOpen(true)}
+            >
+              ?
+            </button>
+          </h2>
 
         <div className="field-row">
           <label className="field">
@@ -163,7 +176,7 @@ export function KafkaBatchSendDialog({
               className="input mono"
               value={draft.key}
               onChange={(e) => onDraftChange({ key: e.target.value })}
-              placeholder="Use ${i} for index"
+              placeholder="Use ${i}, ${uuid}, ${randString(8)}, ${nowIso}, etc."
             />
           </label>
           <label className="field">
@@ -192,7 +205,7 @@ export function KafkaBatchSendDialog({
               value={draft.value}
               onChange={(e) => onDraftChange({ value: e.target.value })}
               rows={6}
-              placeholder="Free-form text. Use ${i} for index"
+              placeholder="Free-form text. Use ${i}, ${uuid}, ${randString(10)}, ${nowIso}, etc."
               style={{ minHeight: "120px", fontFamily: "monospace" }}
             />
           </label>
@@ -205,7 +218,7 @@ export function KafkaBatchSendDialog({
               value={draft.value}
               onChange={(value) => onDraftChange({ value })}
               onRun={() => void submit()}
-              placeholder='{"message": "hello ${i}"}'
+              placeholder='{"id": "${i}", "name": "${randName()}", "age": "${randInt(18,65)}"}'
               minHeight="120px"
             />
           </div>
@@ -265,7 +278,7 @@ export function KafkaBatchSendDialog({
                 value={draft.value}
                 onChange={(value) => onDraftChange({ value })}
                 onRun={() => void submit()}
-                placeholder="Enter JSON matching the Thrift struct"
+                placeholder="Enter JSON matching the Thrift struct. Supports ${i}, ${uuid}, ${randName()}, etc."
                 minHeight="120px"
               />
             </div>
@@ -382,6 +395,7 @@ export function KafkaBatchSendDialog({
           </button>
         </div>
       </div>
+      {helpOpen && <BatchSendHelpDialog onClose={() => setHelpOpen(false)} />}
     </div>
   );
 }

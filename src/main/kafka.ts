@@ -20,6 +20,7 @@ import type {
   KafkaSearchInput,
   KafkaTopicCreateInput,
 } from '../shared/ipc'
+import { applyTemplate, applyTemplateToValue } from './batchTemplate'
 import type {
   KafkaAuthConfig,
   KafkaConnectionInput,
@@ -511,9 +512,8 @@ export async function produceKafkaBatch(
   if (input.threads <= 0) throw new Error('Threads must be greater than 0')
   if (input.batchSize <= 0) throw new Error('Batch size must be greater than 0')
 
-  // Pre-serialize once for non-thrift; thrift needs per-message serialization
-  // because ${i} placeholder may change the JSON payload.
-  const hasVariable = input.value.includes('${i}') || (input.key?.includes('${i}') ?? false)
+  // Pre-serialize once when no template variables are present; otherwise bake per-message.
+  const hasVariable = /\$\{[^}]+\}/.test(input.value) || /\$\{[^}]+\}/.test(input.key ?? '')
 
   const thriftAst =
     input.format === 'thrift' && input.thrift
@@ -525,12 +525,19 @@ export async function produceKafkaBatch(
     cachedValue = await buildMessageValue(input.value, input.format, input.thrift)
   }
 
-  const encode = (rawValue: string): string | Buffer => {
+  const encode = (rawValue: string, idx: number): string | Buffer => {
     if (cachedValue !== undefined) return cachedValue
-    if (thriftAst && input.thrift) {
-      return serializeThriftBinary(thriftAst, input.thrift.structName, JSON.parse(rawValue))
+    if (input.format === 'json') {
+      const parsed = JSON.parse(rawValue)
+      const templated = applyTemplateToValue(parsed, idx)
+      return JSON.stringify(templated)
     }
-    return rawValue
+    if (thriftAst && input.thrift) {
+      const parsed = JSON.parse(rawValue)
+      const templated = applyTemplateToValue(parsed, idx)
+      return serializeThriftBinary(thriftAst, input.thrift.structName, templated)
+    }
+    return applyTemplate(rawValue, idx)
   }
 
   const client = cache.get(config)
@@ -551,11 +558,9 @@ export async function produceKafkaBatch(
       const messages: { key?: string; value: string | Buffer }[] = []
       for (let i = start; i < end; i++) {
         const idx = i + 1
-        const value = hasVariable ? input.value.replace(/\${i}/g, String(idx)) : input.value
-        const finalKey = key
-          ? (hasVariable ? key.replace(/\${i}/g, String(idx)) : key)
-          : undefined
-        messages.push({ ...(finalKey !== undefined ? { key: finalKey } : {}), value: encode(value) })
+        const value = encode(input.value, idx)
+        const finalKey = key ? applyTemplate(key, idx) : undefined
+        messages.push({ ...(finalKey !== undefined ? { key: finalKey } : {}), value })
       }
       try {
         await producer.send({ topic: topic.trim(), messages })
