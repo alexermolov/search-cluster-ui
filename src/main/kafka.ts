@@ -2,8 +2,10 @@ import { createHash, randomUUID } from 'node:crypto'
 import {
   Kafka,
   logLevel,
+  type Admin,
   type Consumer,
   type EachMessagePayload,
+  type Producer,
   CompressionCodecs,
   CompressionTypes,
 } from 'kafkajs'
@@ -106,49 +108,45 @@ function buildKafka(config: KafkaConnection): Kafka {
 
 class CachedClient {
   kafka: Kafka
-  adminConnected = false
-  producerConnected = false
+  adminInstance: Admin | null = null
+  producerInstance: Producer | null = null
 
   constructor(kafka: Kafka) {
     this.kafka = kafka
   }
 
   async admin() {
-    const admin = this.kafka.admin()
-    if (!this.adminConnected) {
-      await admin.connect()
-      this.adminConnected = true
+    if (!this.adminInstance) {
+      this.adminInstance = this.kafka.admin()
+      await this.adminInstance.connect()
     }
-    return admin
+    return this.adminInstance
   }
 
   async producer() {
-    const producer = this.kafka.producer()
-    if (!this.producerConnected) {
-      await producer.connect()
-      this.producerConnected = true
+    if (!this.producerInstance) {
+      this.producerInstance = this.kafka.producer()
+      await this.producerInstance.connect()
     }
-    return producer
+    return this.producerInstance
   }
 
   async disconnect() {
-    const admin = this.kafka.admin()
-    const producer = this.kafka.producer()
-    if (this.adminConnected) {
+    if (this.adminInstance) {
       try {
-        await admin.disconnect()
+        await this.adminInstance.disconnect()
       } catch {
         /* ignore */
       }
-      this.adminConnected = false
+      this.adminInstance = null
     }
-    if (this.producerConnected) {
+    if (this.producerInstance) {
       try {
-        await producer.disconnect()
+        await this.producerInstance.disconnect()
       } catch {
         /* ignore */
       }
-      this.producerConnected = false
+      this.producerInstance = null
     }
   }
 }
