@@ -21,6 +21,8 @@ import { JsonEditor } from "./JsonEditor";
 import { JsonView } from "./JsonView";
 import { CommandPalettePanel, useKafkaPaletteCommands } from "./CommandPalette";
 import { addToast } from "../toasts";
+import { shareConnection, decodeFromBase64 } from "../share";
+import { ImportDialog } from "./ImportDialog";
 import { KafkaThriftProfilesDialog } from "./KafkaThriftProfilesDialog";
 import {
   KafkaBatchSendDialog,
@@ -1024,6 +1026,7 @@ export function KafkaWorkspace({ onClose }: { onClose: () => void }) {
   const [editor, setEditor] = useState<
     StoredKafkaConnection | null | undefined
   >(undefined);
+  const [importOpen, setImportOpen] = useState(false);
   const [creatingTopic, setCreatingTopic] = useState(false);
   const [producing, setProducing] = useState(false);
   const [produceDraft, setProduceDraft] = useState<KafkaProduceDraft>(
@@ -1244,6 +1247,25 @@ export function KafkaWorkspace({ onClose }: { onClose: () => void }) {
       }
     } catch (reason) {
       setError(errorMessage(reason));
+    }
+  }
+
+  async function handleImportKafka(base64: string): Promise<void> {
+    try {
+      const decoded = decodeFromBase64(base64) as Record<string, unknown>;
+      if (
+        !decoded ||
+        typeof decoded.name !== "string" ||
+        typeof decoded.brokers !== "string"
+      ) {
+        addToast("Invalid Kafka connection config", "error");
+        return;
+      }
+      const { id, createdAt, updatedAt, ...rest } = decoded;
+      await save(rest as unknown as KafkaConnectionInput);
+      addToast("Kafka connection imported", "success");
+    } catch (e) {
+      addToast(`Import failed: ${errorMessage(e)}`, "error");
     }
   }
 
@@ -1542,6 +1564,15 @@ export function KafkaWorkspace({ onClose }: { onClose: () => void }) {
               </div>
               <div className="conn-actions">
                 <button
+                  title="Share"
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    void shareConnection(connection);
+                  }}
+                >
+                  ⎘
+                </button>
+                <button
                   title="Edit"
                   onClick={(event) => {
                     event.stopPropagation();
@@ -1566,12 +1597,20 @@ export function KafkaWorkspace({ onClose }: { onClose: () => void }) {
             <div className="conn-empty">No Kafka connections</div>
           )}
         </div>
-        <button
-          className="btn btn-primary btn-block"
-          onClick={() => setEditor(null)}
-        >
-          + Add Kafka connection
-        </button>
+        <div style={{ display: "flex", gap: "6px" }}>
+          <button
+            className="btn btn-primary btn-block"
+            onClick={() => setEditor(null)}
+          >
+            + Add
+          </button>
+          <button
+            className="btn btn-block"
+            onClick={() => setImportOpen(true)}
+          >
+            Import
+          </button>
+        </div>
       </aside>
 
       <main className="workspace kafka-workspace">
@@ -2201,6 +2240,13 @@ export function KafkaWorkspace({ onClose }: { onClose: () => void }) {
           consumerGroups={consumerGroups}
           loading={loadingDetail}
           onClose={() => setDetailTopic(null)}
+        />
+      )}
+      {importOpen && (
+        <ImportDialog
+          title="Import Kafka connection"
+          onImport={(base64) => void handleImportKafka(base64)}
+          onClose={() => setImportOpen(false)}
         />
       )}
       <CommandPalettePanel

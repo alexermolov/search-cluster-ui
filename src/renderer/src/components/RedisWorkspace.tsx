@@ -13,6 +13,8 @@ import type {
 import { api, errorMessage } from "../api";
 import { CommandPalettePanel, useRedisPaletteCommands } from "./CommandPalette";
 import { addToast } from "../toasts";
+import { shareConnection, decodeFromBase64 } from "../share";
+import { ImportDialog } from "./ImportDialog";
 
 const REDIS_MAX_LOADED_KEYS = 5000;
 const REDIS_KEY_ROW_HEIGHT = 56;
@@ -723,6 +725,7 @@ export function RedisWorkspace({ onClose }: { onClose: () => void }) {
   const [connectionEditor, setConnectionEditor] = useState<
     StoredRedisConnection | null | undefined
   >(undefined);
+  const [importOpen, setImportOpen] = useState(false);
   const [paletteOpen, setPaletteOpen] = useState(false);
   const keyRequest = useRef(0);
   const detailRequest = useRef(0);
@@ -919,6 +922,25 @@ export function RedisWorkspace({ onClose }: { onClose: () => void }) {
     }
   }
 
+  async function handleImportRedis(base64: string): Promise<void> {
+    try {
+      const decoded = decodeFromBase64(base64) as Record<string, unknown>;
+      if (
+        !decoded ||
+        typeof decoded.name !== "string" ||
+        typeof decoded.host !== "string"
+      ) {
+        addToast("Invalid Redis connection config", "error");
+        return;
+      }
+      const { id, createdAt, updatedAt, ...rest } = decoded;
+      await saveConnection(rest as unknown as RedisConnectionInput);
+      addToast("Redis connection imported", "success");
+    } catch (e) {
+      addToast(`Import failed: ${errorMessage(e)}`, "error");
+    }
+  }
+
   async function selectKey(key: string): Promise<void> {
     if (!active) return;
     const request = ++detailRequest.current;
@@ -1031,6 +1053,15 @@ export function RedisWorkspace({ onClose }: { onClose: () => void }) {
               </div>
               <div className="conn-actions">
                 <button
+                  title="Share"
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    void shareConnection(connection);
+                  }}
+                >
+                  ⎘
+                </button>
+                <button
                   title="Edit"
                   onClick={(event) => {
                     event.stopPropagation();
@@ -1055,12 +1086,20 @@ export function RedisWorkspace({ onClose }: { onClose: () => void }) {
             <div className="conn-empty">No Redis connections</div>
           )}
         </div>
-        <button
-          className="btn btn-primary btn-block"
-          onClick={() => setConnectionEditor(null)}
-        >
-          + Add Redis connection
-        </button>
+        <div style={{ display: "flex", gap: "6px" }}>
+          <button
+            className="btn btn-primary btn-block"
+            onClick={() => setConnectionEditor(null)}
+          >
+            + Add
+          </button>
+          <button
+            className="btn btn-block"
+            onClick={() => setImportOpen(true)}
+          >
+            Import
+          </button>
+        </div>
       </aside>
 
       <main className="workspace redis-workspace">
@@ -1561,6 +1600,13 @@ export function RedisWorkspace({ onClose }: { onClose: () => void }) {
           initial={editor}
           onClose={() => setEditor(null)}
           onSave={saveKey}
+        />
+      )}
+      {importOpen && (
+        <ImportDialog
+          title="Import Redis connection"
+          onImport={(base64) => void handleImportRedis(base64)}
+          onClose={() => setImportOpen(false)}
         />
       )}
       <CommandPalettePanel
