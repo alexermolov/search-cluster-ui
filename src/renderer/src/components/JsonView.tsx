@@ -285,7 +285,7 @@ function JsonCollapsibleObject({
       >
         {expanded ? "▼" : "▶"}
       </span>
-      {"{"}
+      {" {"}
       {!expanded && (
         <>
           {" "}
@@ -310,6 +310,12 @@ function JsonCollapsibleObject({
               >
                 <span className="tok-key">{JSON.stringify(key)}</span>
                 {": "}
+                {scalar !== null && (
+                  <>
+                    <span className="json-toggle-placeholder" />
+                    {" "}
+                  </>
+                )}
                 <JsonCollapsibleNode
                   value={childValue}
                   depth={depth + 1}
@@ -380,7 +386,7 @@ function JsonCollapsibleArray({
       >
         {expanded ? "▼" : "▶"}
       </span>
-      {"["}
+      {" ["}
       {!expanded && (
         <>
           {" "}
@@ -405,6 +411,12 @@ function JsonCollapsibleArray({
                 className="json-line"
                 style={{ paddingLeft: `${(depth + 1) * 2}ch` }}
               >
+                {scalar !== null && (
+                  <>
+                    <span className="json-toggle-placeholder" />
+                    {" "}
+                  </>
+                )}
                 <JsonCollapsibleNode
                   value={item}
                   depth={depth + 1}

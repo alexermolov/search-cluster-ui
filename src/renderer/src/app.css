@@ -1948,16 +1948,20 @@ textarea.input {
     font-family: inherit;
 }
 
+.json-toggle,
+.json-toggle-placeholder {
+    display: inline-block;
+    width: 1ch;
+    font-size: 0.85em;
+    line-height: 1;
+    vertical-align: middle;
+    text-align: center;
+}
+
 .json-toggle {
     cursor: pointer;
     user-select: none;
-    margin-right: 0.25em;
-    display: inline-block;
-    width: 1em;
-    text-align: center;
     color: var(--text-dim);
-    font-size: 0.85em;
-    line-height: 1;
 }
 
 .json-toggle:hover {
