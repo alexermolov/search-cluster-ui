@@ -175,6 +175,20 @@ interface JsonNodeProps {
   markers?: { open: string; close: string };
   onQuickQuery?: (field: string, value: string | number | boolean) => void;
   excludedRootKey?: string;
+  /** Property name (key + colon) rendered after the toggle arrow. */
+  label?: ReactNode;
+  trailingComma?: ReactNode;
+}
+
+function JsonIndent({ depth }: { depth: number }) {
+  return (
+    <span
+      style={{
+        display: "inline-block",
+        width: `${depth * 2}ch`,
+      }}
+    />
+  );
 }
 
 function JsonCollapsibleNode({
@@ -185,17 +199,34 @@ function JsonCollapsibleNode({
   markers,
   onQuickQuery,
   excludedRootKey,
+  label,
+  trailingComma,
 }: JsonNodeProps): ReactNode {
   if (value === null) {
-    return <span className="tok-null">null</span>;
+    return (
+      <>
+        <span className="tok-null">null</span>
+        {trailingComma}
+      </>
+    );
   }
 
   if (typeof value === "boolean") {
-    return <span className="tok-bool">{String(value)}</span>;
+    return (
+      <>
+        <span className="tok-bool">{String(value)}</span>
+        {trailingComma}
+      </>
+    );
   }
 
   if (typeof value === "number") {
-    return <span className="tok-num">{value}</span>;
+    return (
+      <>
+        <span className="tok-num">{value}</span>
+        {trailingComma}
+      </>
+    );
   }
 
   if (typeof value === "string") {
@@ -205,18 +236,24 @@ function JsonCollapsibleNode({
     if (isExcluded) {
       // Highlight values are rendered as JSON strings with possible markers.
       return (
-        <span className="tok-str">
-          &quot;
-          <HighlightedString value={value} markers={markers} />
-          &quot;
-        </span>
+        <>
+          <span className="tok-str">
+            &quot;
+            <HighlightedString value={value} markers={markers} />
+            &quot;
+          </span>
+          {trailingComma}
+        </>
       );
     }
 
     return (
-      <span className="tok-str">
-        <HighlightedString value={JSON.stringify(value)} markers={markers} />
-      </span>
+      <>
+        <span className="tok-str">
+          <HighlightedString value={JSON.stringify(value)} markers={markers} />
+        </span>
+        {trailingComma}
+      </>
     );
   }
 
@@ -231,6 +268,8 @@ function JsonCollapsibleNode({
         markers={markers}
         onQuickQuery={onQuickQuery}
         excludedRootKey={excludedRootKey}
+        label={label}
+        trailingComma={trailingComma}
       />
     );
   }
@@ -247,6 +286,8 @@ function JsonCollapsibleNode({
         markers={markers}
         onQuickQuery={onQuickQuery}
         excludedRootKey={excludedRootKey}
+        label={label}
+        trailingComma={trailingComma}
       />
     );
   }
@@ -262,6 +303,8 @@ function JsonCollapsibleObject({
   markers,
   onQuickQuery,
   excludedRootKey,
+  label,
+  trailingComma,
 }: JsonNodeProps & { value: Record<string, unknown> }) {
   const [expanded, setExpanded] = useState(true);
   const keys = Object.keys(value);
@@ -285,7 +328,15 @@ function JsonCollapsibleObject({
       >
         {expanded ? "▼" : "▶"}
       </span>
-      {" {"}
+      {label != null ? (
+        <>
+          {" "}
+          {label}
+          {"{"}
+        </>
+      ) : (
+        " {"
+      )}
       {!expanded && (
         <>
           {" "}
@@ -301,19 +352,32 @@ function JsonCollapsibleObject({
             const scalar = getScalarValue(childValue);
             const showQuickQuery =
               !isExcluded && scalar !== null && onQuickQuery != null;
+            // Only non-empty objects/arrays render their own toggle arrow;
+            // every other value gets a placeholder so the arrow column stays
+            // aligned before the property name.
+            const hasToggle =
+              childValue !== null &&
+              typeof childValue === "object" &&
+              (Array.isArray(childValue)
+                ? childValue.length > 0
+                : Object.keys(childValue).length > 0);
+            const keyLabel = (
+              <>
+                <span className="tok-key">{JSON.stringify(key)}</span>
+                {": "}
+              </>
+            );
 
             return (
               <div
                 key={key}
                 className="json-line"
-                style={{ paddingLeft: `${(depth + 1) * 2}ch` }}
               >
-                <span className="tok-key">{JSON.stringify(key)}</span>
-                {": "}
-                {scalar !== null && (
+                <JsonIndent depth={depth} />
+                {!hasToggle && (
                   <>
-                    <span className="json-toggle-placeholder" />
-                    {" "}
+                    <span className="json-toggle-placeholder" />{" "}
+                    {keyLabel}
                   </>
                 )}
                 <JsonCollapsibleNode
@@ -324,8 +388,9 @@ function JsonCollapsibleObject({
                   markers={markers}
                   onQuickQuery={onQuickQuery}
                   excludedRootKey={excludedRootKey}
+                  label={hasToggle ? keyLabel : undefined}
+                  trailingComma={i < keys.length - 1 ? "," : undefined}
                 />
-                {i < keys.length - 1 ? "," : ""}
                 {showQuickQuery && (
                   <button
                     type="button"
@@ -345,13 +410,19 @@ function JsonCollapsibleObject({
           })}
           <div
             className="json-line"
-            style={{ paddingLeft: `${depth * 2}ch` }}
           >
+            <JsonIndent depth={depth} />
             {"}"}
+            {trailingComma}
           </div>
         </>
       )}
-      {!expanded && "}"}
+      {!expanded && (
+        <>
+          {"}"}
+          {trailingComma}
+        </>
+      )}
     </>
   );
 }
@@ -364,6 +435,8 @@ function JsonCollapsibleArray({
   markers,
   onQuickQuery,
   excludedRootKey,
+  label,
+  trailingComma,
 }: JsonNodeProps & { value: unknown[] }) {
   const [expanded, setExpanded] = useState(true);
   const isExcluded =
@@ -386,7 +459,15 @@ function JsonCollapsibleArray({
       >
         {expanded ? "▼" : "▶"}
       </span>
-      {" ["}
+      {label != null ? (
+        <>
+          {" "}
+          {label}
+          {"["}
+        </>
+      ) : (
+        " ["
+      )}
       {!expanded && (
         <>
           {" "}
@@ -404,17 +485,25 @@ function JsonCollapsibleArray({
             const scalar = getScalarValue(item);
             const showQuickQuery =
               !isExcluded && scalar !== null && onQuickQuery != null;
+            // Only non-empty objects/arrays render their own toggle arrow;
+            // every other value gets a placeholder so the arrow column stays
+            // aligned.
+            const hasToggle =
+              item !== null &&
+              typeof item === "object" &&
+              (Array.isArray(item)
+                ? item.length > 0
+                : Object.keys(item).length > 0);
 
             return (
               <div
                 key={i}
                 className="json-line"
-                style={{ paddingLeft: `${(depth + 1) * 2}ch` }}
               >
-                {scalar !== null && (
+                <JsonIndent depth={depth} />
+                {!hasToggle && (
                   <>
-                    <span className="json-toggle-placeholder" />
-                    {" "}
+                    <span className="json-toggle-placeholder" />{" "}
                   </>
                 )}
                 <JsonCollapsibleNode
@@ -425,8 +514,8 @@ function JsonCollapsibleArray({
                   markers={markers}
                   onQuickQuery={onQuickQuery}
                   excludedRootKey={excludedRootKey}
+                  trailingComma={i < value.length - 1 ? "," : undefined}
                 />
-                {i < value.length - 1 ? "," : ""}
                 {showQuickQuery && (
                   <button
                     type="button"
@@ -446,13 +535,19 @@ function JsonCollapsibleArray({
           })}
           <div
             className="json-line"
-            style={{ paddingLeft: `${depth * 2}ch` }}
           >
+            <JsonIndent depth={depth} />
             {"]"}
+            {trailingComma}
           </div>
         </>
       )}
-      {!expanded && "]"}
+      {!expanded && (
+        <>
+          {"]"}
+          {trailingComma}
+        </>
+      )}
     </>
   );
 }
