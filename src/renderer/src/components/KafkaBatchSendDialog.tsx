@@ -1,7 +1,7 @@
-import { useRef, useState, useEffect } from "react";
+import { useState } from "react";
 import type { ThriftProfile } from "../../../shared/types";
 import type { KafkaBatchProduceInput } from "../../../shared/ipc";
-import { api, errorMessage } from "../api";
+import { errorMessage } from "../api";
 import { JsonEditor } from "./JsonEditor";
 import { BatchSendHelpDialog } from "./BatchSendHelpDialog";
 
@@ -10,8 +10,6 @@ export type KafkaBatchProduceDraft = {
   format: "raw" | "json" | "thrift";
   value: string;
   thriftProfileId: string;
-  thriftIdl: string;
-  thriftStruct: string;
   count: number;
   threads: number;
   batchSize: number;
@@ -38,8 +36,6 @@ export function KafkaBatchSendDialog({
   onClose,
   onSend,
 }: Props) {
-  const [thriftStructs, setThriftStructs] = useState<string[]>([]);
-  const [thriftError, setThriftError] = useState<string | null>(null);
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<{
@@ -49,45 +45,6 @@ export function KafkaBatchSendDialog({
     tookMs: number;
   } | null>(null);
   const [helpOpen, setHelpOpen] = useState(false);
-  const thriftStructRef = useRef(draft.thriftStruct);
-  thriftStructRef.current = draft.thriftStruct;
-
-  useEffect(() => {
-    if (draft.format !== "thrift" || !draft.thriftProfileId) {
-      setThriftStructs([]);
-      setThriftError(null);
-      return;
-    }
-    const profile = profiles.find((p) => p.id === draft.thriftProfileId);
-    if (!profile) {
-      setThriftStructs([]);
-      setThriftError(null);
-      return;
-    }
-    let cancelled = false;
-    api
-      .parseThriftIDL(profile.idl)
-      .then((names) => {
-        if (cancelled) return;
-        setThriftStructs(names);
-        setThriftError(null);
-        if (names.length === 1) {
-          onDraftChange({ thriftStruct: names[0], thriftIdl: profile.idl });
-        } else if (!names.includes(thriftStructRef.current)) {
-          onDraftChange({ thriftStruct: "", thriftIdl: profile.idl });
-        } else {
-          onDraftChange({ thriftIdl: profile.idl });
-        }
-      })
-      .catch((e: unknown) => {
-        if (cancelled) return;
-        setThriftStructs([]);
-        setThriftError(errorMessage(e));
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [draft.format, draft.thriftProfileId, profiles, onDraftChange]);
 
   async function submit(): Promise<void> {
     if (draft.count <= 0) {
@@ -121,10 +78,6 @@ export function KafkaBatchSendDialog({
         setError("Selected Thrift profile not found");
         return;
       }
-      if (!draft.thriftStruct) {
-        setError("Please select a Thrift struct");
-        return;
-      }
     }
     setSending(true);
     setError(null);
@@ -137,7 +90,11 @@ export function KafkaBatchSendDialog({
         format: draft.format,
         thrift:
           draft.format === "thrift" && profile
-            ? { idl: draft.thriftIdl, structName: draft.thriftStruct, protocol: profile.protocol }
+            ? {
+                idl: profile.idl,
+                structName: profile.structName,
+                protocol: profile.protocol,
+              }
             : undefined,
         count: draft.count,
         threads: draft.threads,
@@ -248,31 +205,22 @@ export function KafkaBatchSendDialog({
                   Create a profile in the decode toolbar first
                 </span>
               )}
+              {draft.thriftProfileId &&
+                (() => {
+                  const p = profiles.find(
+                    (x) => x.id === draft.thriftProfileId,
+                  );
+                  if (!p) return null;
+                  return (
+                    <span className="muted">
+                      {p.structName} ·{" "}
+                      {p.protocol === "compact"
+                        ? "TCompactProtocol"
+                        : "TBinaryProtocol"}
+                    </span>
+                  );
+                })()}
             </label>
-            {draft.thriftProfileId && thriftError && (
-              <div className="banner banner-error" style={{ marginTop: -6 }}>
-                {thriftError}
-              </div>
-            )}
-            {draft.thriftProfileId && thriftStructs.length > 0 && (
-              <label className="field">
-                <span>Struct / Exception / Union</span>
-                <select
-                  className="input"
-                  value={draft.thriftStruct}
-                  onChange={(e) =>
-                    onDraftChange({ thriftStruct: e.target.value })
-                  }
-                >
-                  <option value="">— Select —</option>
-                  {thriftStructs.map((name) => (
-                    <option key={name} value={name}>
-                      {name}
-                    </option>
-                  ))}
-                </select>
-              </label>
-            )}
             <div className="field">
               <span>JSON payload (will be serialized to Thrift binary)</span>
               <JsonEditor
