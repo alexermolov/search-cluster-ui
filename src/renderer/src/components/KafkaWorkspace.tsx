@@ -28,6 +28,7 @@ import {
   KafkaBatchSendDialog,
   type KafkaBatchProduceDraft,
 } from "./KafkaBatchSendDialog";
+import { ToolsDialog } from "./ToolsDialog";
 
 const EMPTY_TLS: KafkaTlsConfig = {
   enabled: false,
@@ -996,6 +997,7 @@ export function KafkaWorkspace({ onClose }: { onClose: () => void }) {
   >([]);
   const [loadingDetail, setLoadingDetail] = useState(false);
   const [paletteOpen, setPaletteOpen] = useState(false);
+  const [toolsOpen, setToolsOpen] = useState(false);
   const topicRequest = useRef(0);
   const consumerRequest = useRef(0);
   const messageRequest = useRef(0);
@@ -1491,9 +1493,18 @@ export function KafkaWorkspace({ onClose }: { onClose: () => void }) {
         <div className="sidebar-header">
           <span className="logo">◈</span> Kafka Browser
         </div>
-        <button className="btn btn-block" onClick={onClose}>
-          ← Product selection
-        </button>
+        <div className="product-row">
+          <button className="btn btn-block" onClick={onClose}>
+            ← Product selection
+          </button>
+          <button
+            className="btn tools-btn"
+            title="Tools (date & time formats)"
+            onClick={() => setToolsOpen(true)}
+          >
+            ⚙
+          </button>
+        </div>
         <div className="sidebar-label">Kafka connections</div>
         <div className="conn-list">
           {connections.map((connection) => (
@@ -2205,6 +2216,7 @@ export function KafkaWorkspace({ onClose }: { onClose: () => void }) {
         open={paletteOpen}
         onClose={() => setPaletteOpen(false)}
       />
+      <ToolsDialog open={toolsOpen} onClose={() => setToolsOpen(false)} />
     </div>
   );
 }

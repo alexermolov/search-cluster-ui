@@ -2115,6 +2115,109 @@ textarea.input {
     flex: 1;
 }
 
+/* ---------- Tools dialog ---------- */
+
+.product-row {
+    display: flex;
+    gap: 6px;
+}
+
+.product-row .btn-block {
+    flex: 1;
+    min-width: 0;
+}
+
+.tools-btn {
+    flex-shrink: 0;
+    padding: 7px 11px;
+    line-height: 1;
+}
+
+.tools-floating-btn {
+    position: fixed;
+    top: 16px;
+    right: 16px;
+    z-index: 10;
+    padding: 7px 11px;
+    line-height: 1;
+}
+
+.tools-modal {
+    width: 780px;
+}
+
+.tools-header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.tools-header h2 {
+    margin: 0;
+}
+
+.tools-base {
+    font-size: 12px;
+    color: var(--text-dim);
+}
+
+.tools-content {
+    overflow-y: auto;
+    flex: 1;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+    padding-right: 4px;
+}
+
+.tools-section {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.tools-section-title {
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--text-dim);
+}
+
+.tools-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.tools-row-label {
+    width: 220px;
+    flex-shrink: 0;
+    display: flex;
+    flex-direction: column;
+    line-height: 1.3;
+}
+
+.tools-row-name {
+    font-size: 12px;
+}
+
+.tools-row-hint {
+    font-size: 11px;
+    color: var(--text-dim);
+}
+
+.tools-row-value {
+    flex: 1;
+    min-width: 0;
+}
+
+.tools-copy-btn {
+    flex-shrink: 0;
+    padding: 6px 10px;
+    line-height: 1;
+}
+
 /* ---------- Help dialog ---------- */
 
 .help-modal {

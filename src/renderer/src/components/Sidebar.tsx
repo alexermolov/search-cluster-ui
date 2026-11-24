@@ -5,6 +5,7 @@ import { shareConnection, decodeFromBase64 } from "../share";
 import { addToast } from "../toasts";
 import { ConfirmDialog } from "./ConfirmDialog";
 import { ImportDialog } from "./ImportDialog";
+import { ToolsDialog } from "./ToolsDialog";
 
 const FLAVOR_TAG = { elasticsearch: "ES", opensearch: "OS" } as const;
 
@@ -25,6 +26,7 @@ export function Sidebar({ onBack }: { onBack: () => void }) {
     null,
   );
   const [importOpen, setImportOpen] = useState(false);
+  const [toolsOpen, setToolsOpen] = useState(false);
 
   async function handleImport(base64: string): Promise<void> {
     try {
@@ -68,9 +70,18 @@ export function Sidebar({ onBack }: { onBack: () => void }) {
         </button>
       </div>
 
-      <button className="btn btn-block" onClick={onBack}>
-        ← Product selection
-      </button>
+      <div className="product-row">
+        <button className="btn btn-block" onClick={onBack}>
+          ← Product selection
+        </button>
+        <button
+          className="btn tools-btn"
+          title="Tools (date & time formats)"
+          onClick={() => setToolsOpen(true)}
+        >
+          ⚙
+        </button>
+      </div>
       <div className="sidebar-label">Connections</div>
 
       <div className="conn-list">
@@ -188,6 +199,8 @@ export function Sidebar({ onBack }: { onBack: () => void }) {
           onClose={() => setImportOpen(false)}
         />
       )}
+
+      <ToolsDialog open={toolsOpen} onClose={() => setToolsOpen(false)} />
     </aside>
   );
 }
