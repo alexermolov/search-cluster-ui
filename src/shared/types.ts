@@ -108,6 +108,7 @@ export interface RedisConnectionInput {
   sentinelPassword: string
   tls: RedisTlsConfig
   timeoutMs: number
+  separator: string
 }
 
 export interface StoredRedisConnection extends Omit<RedisConnectionInput, 'id'> {

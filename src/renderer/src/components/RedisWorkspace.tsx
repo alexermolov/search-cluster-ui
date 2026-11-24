@@ -15,10 +15,9 @@ import { CommandPalettePanel, useRedisPaletteCommands } from "./CommandPalette";
 import { addToast } from "../toasts";
 import { shareConnection, decodeFromBase64 } from "../share";
 import { ImportDialog } from "./ImportDialog";
+import { RedisKeyTree } from "./RedisKeyTree";
 
 const REDIS_MAX_LOADED_KEYS = 5000;
-const REDIS_KEY_ROW_HEIGHT = 56;
-const REDIS_KEY_OVERSCAN = 5;
 
 function mergeKeyPages(
   previous: RedisKeyEntry[],
@@ -81,6 +80,7 @@ const NEW_CONNECTION: RedisConnectionInput = {
   sentinelPassword: "",
   tls: EMPTY_TLS,
   timeoutMs: 10_000,
+  separator: ":",
 };
 
 const REDIS_COMMANDS = [
@@ -153,6 +153,7 @@ function RedisConnectionForm({
     connection
       ? {
           ...connection,
+          separator: connection.separator ?? ":",
           tls: { ...connection.tls },
         }
       : { ...NEW_CONNECTION, tls: { ...EMPTY_TLS } },
@@ -381,6 +382,21 @@ function RedisConnectionForm({
               }
             />
           </label>
+          <label className="field">
+            <span>Key separator</span>
+            <input
+              className="input mono"
+              maxLength={1}
+              value={draft.separator}
+              onChange={(event) =>
+                setDraft({ ...draft, separator: event.target.value })
+              }
+              placeholder=":"
+              title="Character used to group keys into folders. Leave empty to disable grouping."
+            />
+          </label>
+        </div>
+        <div className="field-row">
           <div className="field redis-tls-toggle">
             <span>TLS / SSL</span>
             <label className="checkbox">
@@ -715,7 +731,9 @@ export function RedisWorkspace({ onClose }: { onClose: () => void }) {
   const [commandOutput, setCommandOutput] = useState<
     Array<{ command: string; result: unknown; error?: string }>
   >([]);
-  const [keyListWindow, setKeyListWindow] = useState({ top: 0, height: 600 });
+  const [expandedFolders, setExpandedFolders] = useState<Set<string>>(new Set());
+  const [keyTreeTop, setKeyTreeTop] = useState(0);
+  const [keyTreeHeight, setKeyTreeHeight] = useState(600);
   const [loadingKeys, setLoadingKeys] = useState(false);
   const [loadingDetail, setLoadingDetail] = useState(false);
   const [loadingServer, setLoadingServer] = useState(false);
@@ -730,22 +748,10 @@ export function RedisWorkspace({ onClose }: { onClose: () => void }) {
   const keyRequest = useRef(0);
   const detailRequest = useRef(0);
   const serverRequest = useRef(0);
-  const keyListRef = useRef<HTMLDivElement>(null);
   const commandInput = useRef<HTMLInputElement>(null);
 
   const active =
     connections.find((connection) => connection.id === activeId) ?? null;
-  const firstVisibleKey = Math.max(
-    0,
-    Math.floor(keyListWindow.top / REDIS_KEY_ROW_HEIGHT) - REDIS_KEY_OVERSCAN,
-  );
-  const lastVisibleKey = Math.min(
-    keys.length,
-    firstVisibleKey +
-      Math.ceil(keyListWindow.height / REDIS_KEY_ROW_HEIGHT) +
-      REDIS_KEY_OVERSCAN * 2,
-  );
-  const visibleKeys = keys.slice(firstVisibleKey, lastVisibleKey);
   const commandPrefix = command.match(/^\s*(\S+)$/)?.[1] ?? null;
   const commandSuggestions =
     commandPrefix && !commandSuggestionsDismissed
@@ -755,9 +761,8 @@ export function RedisWorkspace({ onClose }: { onClose: () => void }) {
       : [];
 
   useEffect(() => {
-    if (tab !== "keys" || !keyListRef.current) return;
-    keyListRef.current.scrollTop = 0;
-    setKeyListWindow({ top: 0, height: keyListRef.current.clientHeight });
+    if (tab !== "keys") return;
+    setKeyTreeTop(0);
   }, [tab]);
 
   function completeCommand(name: string): void {
@@ -797,11 +802,8 @@ export function RedisWorkspace({ onClose }: { onClose: () => void }) {
         setScanMatch(match);
         setKeys([]);
         setCursor("");
-        setKeyListWindow({
-          top: 0,
-          height: keyListRef.current?.clientHeight ?? 600,
-        });
-        if (keyListRef.current) keyListRef.current.scrollTop = 0;
+        setExpandedFolders(new Set());
+        setKeyTreeTop(0);
         setSelectedKey(null);
         detailRequest.current += 1;
       }
@@ -1159,7 +1161,7 @@ export function RedisWorkspace({ onClose }: { onClose: () => void }) {
                   className={`redis-tab${tab === view ? " active" : ""}`}
                   onClick={() => {
                     if (view === "keys")
-                      setKeyListWindow((current) => ({ ...current, top: 0 }));
+                      setKeyTreeTop(0);
                     setTab(view);
                   }}
                 >
@@ -1200,58 +1202,40 @@ export function RedisWorkspace({ onClose }: { onClose: () => void }) {
                       Search
                     </button>
                   </form>
-                  <div
-                    className="redis-key-list"
-                    ref={keyListRef}
-                    onScroll={(event) =>
-                      setKeyListWindow({
-                        top: event.currentTarget.scrollTop,
-                        height: event.currentTarget.clientHeight,
-                      })
-                    }
-                  >
-                    {keys.length > 0 && (
-                      <div
-                        className="redis-key-list-window"
-                        style={{ height: keys.length * REDIS_KEY_ROW_HEIGHT }}
-                      >
-                        {visibleKeys.map((entry, index) => {
-                          const keyIndex = firstVisibleKey + index;
-                          return (
-                            <button
-                              key={entry.key}
-                              className={`redis-key-item${selectedKey?.key === entry.key ? " active" : ""}`}
-                              style={{
-                                position: "absolute",
-                                top: keyIndex * REDIS_KEY_ROW_HEIGHT,
-                                height: REDIS_KEY_ROW_HEIGHT - 3,
-                              }}
-                              onClick={() => void selectKey(entry.key)}
-                            >
-                              <span className="redis-key-name">
-                                {entry.key}
-                              </span>
-                              <span className="redis-key-meta">
-                                <span>{entry.type}</span>
-                                <span>{formatTtl(entry.ttlMs)}</span>
-                              </span>
-                            </button>
-                          );
-                        })}
-                      </div>
-                    )}
-                    {!loadingKeys && keys.length === 0 && (
-                      <div className="muted redis-empty-keys">
-                        No keys found for this pattern.
-                      </div>
-                    )}
-                  </div>
+                  <RedisKeyTree
+                    entries={keys}
+                    separator={active?.separator ?? ":"}
+                    selectedKey={selectedKey?.key ?? null}
+                    onSelectKey={(key) => void selectKey(key)}
+                    onToggleFolder={(fullKey) => {
+                      setExpandedFolders((prev) => {
+                        const next = new Set(prev);
+                        if (next.has(fullKey)) next.delete(fullKey);
+                        else next.add(fullKey);
+                        return next;
+                      });
+                    }}
+                    expandedFolders={expandedFolders}
+                    height={keyTreeHeight}
+                    top={keyTreeTop}
+                    onScroll={(top, height) => {
+                      setKeyTreeTop(top);
+                      setKeyTreeHeight(height);
+                    }}
+                  />
                   {keys.length >= REDIS_MAX_LOADED_KEYS && cursor && (
                     <div className="muted redis-key-limit">
                       Showing the first {REDIS_MAX_LOADED_KEYS.toLocaleString()}{" "}
                       keys. Narrow the pattern to see more.
                     </div>
                   )}
+                  {keys.length > 0 &&
+                    keys.length < REDIS_MAX_LOADED_KEYS &&
+                    cursor && (
+                      <div className="muted redis-key-limit">
+                        Scan incomplete — load more to find remaining matches.
+                      </div>
+                    )}
                   <button
                     className="btn btn-block"
                     onClick={() => void reloadKeys(active.id, true)}

@@ -17,6 +17,9 @@ type RedisConfig = RedisConnectionInput | StoredRedisConnection
 type RedisClient = Redis | Cluster
 const REDIS_SCAN_PIPELINE_SIZE = 100
 const REDIS_SCAN_CONCURRENCY = 8
+const REDIS_SCAN_COUNT_HINT = 1000
+const REDIS_SCAN_MAX_ROUNDS = 5000
+const REDIS_SCAN_TIME_BUDGET_MS = 15_000
 const REDIS_COLLECTION_LIMIT = 1000
 const REDIS_COMMAND_RESULT_LIMIT = 1000
 const REDIS_COMMAND_STRING_LIMIT = 100_000
@@ -326,38 +329,78 @@ export async function scanRedisKeys(
     throw new Error('Scan count must be between 1 and 1000')
 
   return withRedis(config, async (client) => {
-    let keys: string[] = []
+    // SCAN applies MATCH only to the keys it happens to examine per call, so
+    // a single round almost never covers the whole keyspace and filtered
+    // searches miss keys. Iterate the cursor until the requested page is
+    // filled, the scan is exhausted, or the per-request budget is reached;
+    // "Load more" resumes from the returned cursor so every key stays
+    // reachable regardless of its type.
+    let scanCount = REDIS_SCAN_COUNT_HINT
+    const deadline = Date.now() + REDIS_SCAN_TIME_BUDGET_MS
+    const keys: string[] = []
     let nextCursor: string
     if (client instanceof Cluster) {
       const nodes = client.nodes('master')
       if (nodes.length === 0) throw new Error('Redis Cluster has no reachable master nodes')
-      let cursors = nodes.map(() => '0')
+      // Scale the per-node COUNT hint so one round across all masters
+      // examines roughly REDIS_SCAN_COUNT_HINT keys in total.
+      scanCount = Math.ceil(REDIS_SCAN_COUNT_HINT / nodes.length)
+      const cursors = nodes.map(() => '0')
+      let pending = nodes.map((_, index) => index)
       if (input.cursor) {
         try {
           const parsed = JSON.parse(input.cursor) as unknown
-          if (!Array.isArray(parsed) || parsed.length !== nodes.length || parsed.some((v) => typeof v !== 'string'))
+          if (
+            !Array.isArray(parsed) ||
+            parsed.length !== nodes.length ||
+            parsed.some((v) => typeof v !== 'string')
+          )
             throw new Error('Invalid cluster scan cursor')
-          cursors = parsed
+          parsed.forEach((value, index) => {
+            cursors[index] = value
+          })
+          pending = pending.filter((index) => cursors[index] !== '0')
         } catch {
           throw new Error('Invalid cluster scan cursor')
         }
       }
-      const results: Array<[string, string[]]> = new Array(nodes.length)
-      for (let offset = 0; offset < nodes.length; offset += REDIS_SCAN_CONCURRENCY) {
-        await Promise.all(
-          nodes.slice(offset, offset + REDIS_SCAN_CONCURRENCY).map(async (node, batchIndex) => {
-            const index = offset + batchIndex
-            results[index] = await scanNode(node, cursors[index], pattern, count)
-          }),
-        )
+      let rounds = 0
+      while (
+        pending.length > 0 &&
+        keys.length < count &&
+        rounds < REDIS_SCAN_MAX_ROUNDS &&
+        Date.now() < deadline
+      ) {
+        for (let offset = 0; offset < pending.length; offset += REDIS_SCAN_CONCURRENCY) {
+          await Promise.all(
+            pending.slice(offset, offset + REDIS_SCAN_CONCURRENCY).map(async (index) => {
+              const [cursor, found] = await scanNode(nodes[index], cursors[index], pattern, scanCount)
+              cursors[index] = cursor
+              keys.push(...found)
+            }),
+          )
+        }
+        pending = pending.filter((index) => cursors[index] !== '0')
+        rounds += 1
       }
-      keys = results.flatMap((result) => result[1])
-      const updatedCursors = results.map((result) => result[0])
-      nextCursor = updatedCursors.every((cursor) => cursor === '0') ? '' : JSON.stringify(updatedCursors)
+      nextCursor = pending.length === 0 ? '' : JSON.stringify(cursors)
     } else {
-      const [cursor, found] = await scanNode(client, input.cursor || '0', pattern, count)
-      keys = found
-      nextCursor = cursor === '0' ? '' : cursor
+      let cursor = input.cursor || '0'
+      let exhausted = false
+      let rounds = 0
+      while (
+        !exhausted &&
+        keys.length < count &&
+        rounds < REDIS_SCAN_MAX_ROUNDS &&
+        Date.now() < deadline
+      ) {
+        const [next, found] = await scanNode(client, cursor, pattern, scanCount)
+        cursor = next
+        keys.push(...found)
+        exhausted = cursor === '0'
+        rounds += 1
+      }
+      nextCursor = exhausted ? '' : cursor
     }
 
     const entries: RedisKeyEntry[] = []
@@ -372,16 +415,21 @@ export async function scanRedisKeys(
         const [ttlError, ttlMs] = results[index * 2 + 1]
         if (typeError) throw typeError
         if (ttlError) throw ttlError
+        const rawType = String(type)
+        // A key may expire between SCAN and TYPE; "none" means it is gone.
+        // Keep every other type (including module types such as RedisJSON)
+        // so keys of all structures are listed and searchable.
+        if (rawType === 'none') continue
         entries.push({
           key: batch[index],
-          type: redisKeyType(String(type)),
+          type: redisKeyType(rawType),
           ttlMs: Number(ttlMs),
         })
       }
     }
     return {
       cursor: nextCursor,
-      keys: entries.filter((entry) => entry.type !== 'other').sort((a, b) => a.key.localeCompare(b.key)),
+      keys: entries.sort((a, b) => a.key.localeCompare(b.key)),
     }
   })
 }
@@ -469,8 +517,10 @@ async function readKeyValue(client: RedisClient, key: string, type: RedisKeyType
 export async function getRedisKey(config: RedisConfig, key: string): Promise<RedisKeyDetail> {
   if (!key.trim()) throw new Error('A Redis key is required')
   return withRedis(config, async (client) => {
-    const type = redisKeyType(await client.type(key))
-    if (type === 'other') throw new Error(`Key "${key}" does not exist or has an unsupported type`)
+    const rawType = String(await client.type(key))
+    if (rawType === 'none') throw new Error(`Key "${key}" does not exist`)
+    const type = redisKeyType(rawType)
+    if (type === 'other') throw new Error(`Key "${key}" has an unsupported type "${rawType}"`)
     const [ttlMs, result] = await Promise.all([
       client.pttl(key),
       readKeyValue(client, key, type),

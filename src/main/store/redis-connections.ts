@@ -18,6 +18,7 @@ interface PersistedConnection {
   db: number
   nodes: string
   masterName: string
+  separator: string
   timeoutMs: number
   createdAt: number
   updatedAt: number
@@ -47,7 +48,7 @@ export class RedisConnectionStore {
 
   list(): StoredRedisConnection[] {
     return this.read().connections.map((connection) => {
-      const { id, name, topology, host, port, db, nodes, masterName, timeoutMs, createdAt, updatedAt } =
+      const { id, name, topology, host, port, db, nodes, masterName, separator, timeoutMs, createdAt, updatedAt } =
         connection
       return {
         id,
@@ -58,6 +59,7 @@ export class RedisConnectionStore {
         db,
         nodes,
         masterName,
+        separator,
         timeoutMs,
         createdAt,
         updatedAt,
@@ -117,6 +119,7 @@ export class RedisConnectionStore {
       db: input.db,
       nodes: input.nodes.trim(),
       masterName: input.masterName.trim(),
+      separator: input.separator ?? ':',
       timeoutMs: input.timeoutMs,
       createdAt: existing?.createdAt ?? now,
       updatedAt: now,
@@ -141,6 +144,7 @@ export class RedisConnectionStore {
       db: connection.db,
       nodes: connection.nodes,
       masterName: connection.masterName,
+      separator: connection.separator,
       timeoutMs: connection.timeoutMs,
       createdAt: connection.createdAt,
       updatedAt: connection.updatedAt,

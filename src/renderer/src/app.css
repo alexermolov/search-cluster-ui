@@ -1107,6 +1107,67 @@ body {
     font-size: 11px;
 }
 
+/* --- Redis key tree --- */
+.redis-tree-row {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    box-sizing: border-box;
+    right: 0;
+    left: 0;
+    padding: 0 8px;
+    border: 1px solid transparent;
+    border-radius: 6px;
+    background: transparent;
+    color: var(--text);
+    cursor: pointer;
+    font: inherit;
+    white-space: nowrap;
+    user-select: none;
+}
+
+.redis-tree-row:hover,
+.redis-tree-row.active {
+    border-color: var(--border);
+    background: var(--bg-elevated);
+}
+
+.redis-tree-icon {
+    display: inline-block;
+    width: 14px;
+    text-align: center;
+    font-size: 10px;
+    color: var(--accent);
+    flex-shrink: 0;
+}
+
+.redis-tree-name {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font: 12px var(--mono);
+    flex: 1;
+    min-width: 0;
+}
+
+.redis-tree-name.folder {
+    font-weight: 600;
+}
+
+.redis-tree-meta {
+    display: flex;
+    gap: 8px;
+    color: var(--text-dim);
+    font-size: 10px;
+    flex-shrink: 0;
+}
+
+.redis-tree-count {
+    color: var(--text-dim);
+    font-size: 10px;
+    flex-shrink: 0;
+}
+
 .redis-key-detail,
 .redis-console,
 .redis-server {
