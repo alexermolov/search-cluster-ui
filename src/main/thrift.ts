@@ -1,14 +1,3 @@
-/**
- * Lightweight Thrift IDL parser + TBinaryProtocol serializer for the
- * Electron main process.  Uses the `thrift-parser` package to turn a
- * raw IDL string into an AST, then encodes a plain JSON object into
- * a Thrift binary payload.
- *
- * Supported types:
- *   bool, byte/i8, i16, i32, i64, double, string, binary,
- *   list<T>, set<T>, map<K,V>, struct, exception, union, enum, typedef.
- */
-
 import thriftParser from 'thrift-parser'
 
 export interface ThriftAST {
@@ -42,11 +31,12 @@ export function parseThriftIDL(idl: string): ThriftAST {
 }
 
 export function getThriftStructNames(ast: ThriftAST): string[] {
-  const names: string[] = []
-  if (ast.struct) names.push(...Object.keys(ast.struct))
-  if (ast.exception) names.push(...Object.keys(ast.exception))
-  if (ast.union) names.push(...Object.keys(ast.union))
-  return names.sort((a, b) => a.localeCompare(b))
+  const names = [
+    ...Object.keys(ast.struct ?? {}),
+    ...Object.keys(ast.exception ?? {}),
+    ...Object.keys(ast.union ?? {}),
+  ]
+  return names.sort()
 }
 
 /* ─── TBinaryProtocol writer ─── */
@@ -106,8 +96,6 @@ class ThriftBinaryWriter {
     return Buffer.concat(this.chunks, this.length)
   }
 }
-
-/* ─── Type mapping ─── */
 
 function getTypeId(type: ThriftType, ast: ThriftAST): number {
   if (typeof type === 'string') {
@@ -270,8 +258,7 @@ function writeValue(writer: ThriftBinaryWriter, value: unknown, type: ThriftType
   switch (type.name) {
     case 'list':
     case 'set': {
-      if (!Array.isArray(value))
-        throw new Error(`Expected array for ${type.name}, got ${typeof value}`)
+      if (!Array.isArray(value)) throw new Error(`Expected array for ${type.name}, got ${typeof value}`)
       const elemTypeId = getTypeId(type.valueType, ast)
       writer.writeByte(elemTypeId)
       writer.writeI32(value.length)
@@ -284,11 +271,11 @@ function writeValue(writer: ThriftBinaryWriter, value: unknown, type: ThriftType
       if (typeof value !== 'object' || value === null || Array.isArray(value)) {
         throw new Error(`Expected object for map, got ${typeof value}`)
       }
+      const entries = Object.entries(value)
       const keyTypeId = getTypeId(type.keyType, ast)
       const valTypeId = getTypeId(type.valueType, ast)
       writer.writeByte(keyTypeId)
       writer.writeByte(valTypeId)
-      const entries = Object.entries(value)
       writer.writeI32(entries.length)
       for (const [k, v] of entries) {
         writeValue(writer, k, type.keyType, ast)
@@ -296,12 +283,8 @@ function writeValue(writer: ThriftBinaryWriter, value: unknown, type: ThriftType
       }
       return
     }
-    default:
-      throw new Error(`Unsupported container type: ${(type as any).name}`)
   }
 }
-
-/* ─── Struct / Union ─── */
 
 function writeStruct(writer: ThriftBinaryWriter, value: unknown, structName: string, ast: ThriftAST) {
   if (typeof value !== 'object' || value === null || Array.isArray(value)) {
@@ -383,8 +366,12 @@ class ThriftBinaryReader {
   constructor(private readonly buffer: Buffer) {}
 
   private requireBytes(length: number): void {
-    if (!Number.isInteger(length) || length < 0 || this.offset + length > this.buffer.length) {
-      throw new Error('Unexpected end of Thrift message')
+    if (
+      !Number.isInteger(length) ||
+      length < 0 ||
+      this.offset + length > this.buffer.length
+    ) {
+      throw new Error('Unexpected end of Thrift binary message')
     }
   }
 
@@ -414,9 +401,9 @@ class ThriftBinaryReader {
 
   readI64(): string {
     this.requireBytes(8)
-    const value = this.buffer.readBigInt64BE(this.offset).toString()
+    const value = this.buffer.readBigInt64BE(this.offset)
     this.offset += 8
-    return value
+    return value.toString()
   }
 
   readDouble(): number {
@@ -426,12 +413,15 @@ class ThriftBinaryReader {
     return value
   }
 
-  readString(binary: boolean): string {
+  readString(): string {
     const length = this.readI32()
+    if (length < 0) {
+      throw new Error(`Invalid Thrift binary string length: ${length}`)
+    }
     this.requireBytes(length)
     const bytes = this.buffer.subarray(this.offset, this.offset + length)
     this.offset += length
-    return binary ? bytes.toString('base64') : bytes.toString('utf8')
+    return bytes.toString('utf8')
   }
 
   get remaining(): number {
@@ -445,7 +435,7 @@ const MAX_THRIFT_DEPTH = 64
 function assertWireType(actual: number, expected: ThriftType, ast: ThriftAST): void {
   const expectedId = getTypeId(expected, ast)
   if (actual !== expectedId) {
-    throw new Error(`Thrift type mismatch: expected wire type ${expectedId}, got ${actual}`)
+    throw new Error(`Thrift wire type mismatch: expected ${expectedId}, got ${actual}`)
   }
 }
 
@@ -457,37 +447,32 @@ function readCollectionSize(reader: ThriftBinaryReader): number {
   return size
 }
 
-function skipValue(reader: ThriftBinaryReader, wireType: number, depth: number): void {
+function skipValue(reader: ThriftBinaryReader, fieldType: number, depth: number): void {
   if (depth > MAX_THRIFT_DEPTH) throw new Error('Thrift value exceeds maximum nesting depth')
-
-  switch (wireType) {
-    case 2:
-    case 3:
+  switch (fieldType) {
+    case 2: // bool
+    case 3: // byte/i8
       reader.readByte()
       return
-    case 4:
-      reader.readDouble()
-      return
-    case 6:
+    case 6: // i16
       reader.readI16()
       return
-    case 8:
+    case 8: // i32
       reader.readI32()
       return
-    case 10:
+    case 10: // i64
       reader.readI64()
       return
-    case 11:
-      reader.readString(true)
+    case 4: // double
+      reader.readDouble()
       return
-    case 12:
-      while (true) {
-        const fieldType = reader.readByte()
-        if (fieldType === 0) return
-        reader.readI16()
-        skipValue(reader, fieldType, depth + 1)
-      }
-    case 13: {
+    case 11: // string/binary
+      reader.readString()
+      return
+    case 12: // struct
+      skipStruct(reader, depth + 1)
+      return
+    case 13: { // map
       const keyType = reader.readByte()
       const valueType = reader.readByte()
       const size = readCollectionSize(reader)
@@ -497,8 +482,8 @@ function skipValue(reader: ThriftBinaryReader, wireType: number, depth: number):
       }
       return
     }
-    case 14:
-    case 15: {
+    case 14: // set
+    case 15: { // list
       const itemType = reader.readByte()
       const size = readCollectionSize(reader)
       for (let index = 0; index < size; index += 1) {
@@ -507,7 +492,7 @@ function skipValue(reader: ThriftBinaryReader, wireType: number, depth: number):
       return
     }
     default:
-      throw new Error(`Unsupported Thrift wire type: ${wireType}`)
+      throw new Error(`Unsupported Thrift wire type: ${fieldType}`)
   }
 }
 
@@ -518,9 +503,10 @@ function readValue(
   depth: number,
 ): unknown {
   if (depth > MAX_THRIFT_DEPTH) throw new Error('Thrift value exceeds maximum nesting depth')
-
   if (typeof type === 'string') {
-    if (ast.typedef?.[type]) return readValue(reader, ast.typedef[type].type, ast, depth + 1)
+    if (ast.typedef && ast.typedef[type]) {
+      return readValue(reader, ast.typedef[type].type, ast, depth + 1)
+    }
     switch (type) {
       case 'bool':
         return reader.readByte() !== 0
@@ -537,16 +523,19 @@ function readValue(
       case 'double':
         return reader.readDouble()
       case 'string':
-        return reader.readString(false)
+        return reader.readString()
       case 'binary':
-        return reader.readString(true)
+        return reader.readString() // TODO: return base64?
       default: {
         const enumInfo = ast.enum?.[type]
         if (enumInfo) {
           const value = reader.readI32()
           return enumInfo.items.find((item) => item.value === value)?.name ?? value
         }
-        if (ast.struct?.[type] || ast.exception?.[type] || ast.union?.[type]) {
+        if (ast.struct?.[type] || ast.exception?.[type]) {
+          return readStruct(reader, type, ast, depth + 1)
+        }
+        if (ast.union?.[type]) {
           return readStruct(reader, type, ast, depth + 1)
         }
         throw new Error(`Unknown type: ${type}`)
@@ -559,10 +548,8 @@ function readValue(
     case 'set': {
       const wireType = reader.readByte()
       assertWireType(wireType, type.valueType, ast)
-      const size = readCollectionSize(reader)
-      return Array.from({ length: size }, () =>
-        readValue(reader, type.valueType, ast, depth + 1),
-      )
+      const length = readCollectionSize(reader)
+      return Array.from({ length }, () => readValue(reader, type.valueType, ast, depth + 1))
     }
     case 'map': {
       const keyWireType = reader.readByte()
@@ -580,6 +567,15 @@ function readValue(
   }
 }
 
+function skipStruct(reader: ThriftBinaryReader, depth: number): void {
+  while (true) {
+    const wireType = reader.readByte()
+    if (wireType === 0) return
+    reader.readI16()
+    skipValue(reader, wireType, depth + 1)
+  }
+}
+
 function readStruct(
   reader: ThriftBinaryReader,
   structName: string,
@@ -587,15 +583,14 @@ function readStruct(
   depth: number,
 ): Record<string, unknown> {
   if (depth > MAX_THRIFT_DEPTH) throw new Error('Thrift value exceeds maximum nesting depth')
-
   const fields =
     ast.struct?.[structName] ??
     ast.exception?.[structName] ??
     ast.union?.[structName]
   if (!fields) throw new Error(`Unknown Thrift struct, exception, or union: ${structName}`)
-
   const fieldsById = new Map(fields.map((field) => [field.id, field]))
   const result: Record<string, unknown> = {}
+
   while (true) {
     const wireType = reader.readByte()
     if (wireType === 0) return result
@@ -615,27 +610,15 @@ export function decodeThriftBinary(
   structName: string,
   buffer: Buffer,
 ): Record<string, unknown> {
-  if (buffer.length > 0 && buffer[0] > 15) {
-    return decodeThriftCompact(ast, structName, buffer)
-  }
-
   const reader = new ThriftBinaryReader(buffer)
-  try {
-    const result = readStruct(reader, structName, ast, 0)
-    if (reader.remaining !== 0) {
-      throw new Error(`Thrift message has ${reader.remaining} trailing byte(s)`)
-    }
-    return result
-  } catch (binaryError) {
-    try {
-      return decodeThriftCompact(ast, structName, buffer)
-    } catch {
-      throw binaryError
-    }
+  const result = readStruct(reader, structName, ast, 0)
+  if (reader.remaining !== 0) {
+    throw new Error(`Thrift binary message has ${reader.remaining} trailing byte(s)`)
   }
+  return result
 }
 
-/* ─── TCompactProtocol reader ─── */
+/* ─── TCompactProtocol reader / writer helpers ─── */
 
 class ThriftCompactReader {
   private offset = 0
@@ -983,7 +966,7 @@ function readCompactStruct(
   }
 }
 
-function decodeThriftCompact(
+export function decodeThriftCompact(
   ast: ThriftAST,
   structName: string,
   buffer: Buffer,
@@ -994,4 +977,336 @@ function decodeThriftCompact(
     throw new Error(`Thrift compact message has ${reader.remaining} trailing byte(s)`)
   }
   return result
+}
+
+/* ─── TCompactProtocol writer ─── */
+
+class ThriftCompactWriter {
+  private chunks: Buffer[] = []
+  private length = 0
+
+  writeByte(v: number) {
+    const buf = Buffer.allocUnsafe(1)
+    buf.writeUInt8(v & 0xff, 0)
+    this.chunks.push(buf)
+    this.length += 1
+  }
+
+  writeVarint(value: bigint, maxBytes: number) {
+    const bytes: number[] = []
+    let remaining = value
+    while (true) {
+      const byte = Number(remaining & 0x7fn)
+      remaining >>= 7n
+      if (remaining === 0n) {
+        bytes.push(byte)
+        break
+      }
+      bytes.push(byte | 0x80)
+    }
+    if (bytes.length > maxBytes) {
+      throw new Error(`Varint exceeds maximum length of ${maxBytes} bytes`)
+    }
+    const buf = Buffer.from(bytes)
+    this.chunks.push(buf)
+    this.length += bytes.length
+  }
+
+  writeSignedVarint(value: bigint, maxBytes: number) {
+    const encoded = (value << 1n) ^ (value >> 63n)
+    this.writeVarint(encoded, maxBytes)
+  }
+
+  writeI16(v: number) {
+    this.writeSignedVarint(BigInt(v), 3)
+  }
+
+  writeI32(v: number) {
+    this.writeSignedVarint(BigInt(v), 5)
+  }
+
+  writeI64(v: bigint | number) {
+    this.writeSignedVarint(typeof v === 'bigint' ? v : BigInt(v), 10)
+  }
+
+  writeDouble(v: number) {
+    const buf = Buffer.allocUnsafe(8)
+    buf.writeDoubleLE(v, 0)
+    this.chunks.push(buf)
+    this.length += 8
+  }
+
+  writeString(v: string) {
+    const bytes = Buffer.from(v, 'utf8')
+    this.writeVarint(BigInt(bytes.length), 5)
+    this.chunks.push(bytes)
+    this.length += bytes.length
+  }
+
+  finish(): Buffer {
+    return Buffer.concat(this.chunks, this.length)
+  }
+}
+
+function writeCompactValue(
+  writer: ThriftCompactWriter,
+  value: unknown,
+  type: ThriftType,
+  ast: ThriftAST,
+) {
+  if (typeof type === 'string') {
+    if (ast.typedef && ast.typedef[type]) {
+      writeCompactValue(writer, value, ast.typedef[type].type, ast)
+      return
+    }
+
+    switch (type) {
+      case 'bool': {
+        if (typeof value !== 'boolean') throw new Error(`Expected boolean, got ${typeof value}`)
+        writer.writeByte(value ? COMPACT_TRUE : COMPACT_FALSE)
+        return
+      }
+      case 'byte':
+      case 'i8': {
+        const num = numberValue(value, type)
+        if (!Number.isInteger(num) || num < -128 || num > 127) {
+          throw new Error(`Expected a signed 8-bit integer for ${type}, got ${value}`)
+        }
+        writer.writeByte(num)
+        return
+      }
+      case 'i16': {
+        const num = numberValue(value, type)
+        if (!Number.isInteger(num) || num < -32768 || num > 32767) {
+          throw new Error(`Expected a signed 16-bit integer, got ${value}`)
+        }
+        writer.writeI16(num)
+        return
+      }
+      case 'int':
+      case 'i32': {
+        const num = numberValue(value, type)
+        if (!Number.isInteger(num) || num < -2147483648 || num > 2147483647) {
+          throw new Error(`Expected a signed 32-bit integer, got ${value}`)
+        }
+        writer.writeI32(num)
+        return
+      }
+      case 'i64': {
+        if (typeof value === 'bigint') {
+          writer.writeI64(value)
+        } else if (typeof value === 'number') {
+          if (!Number.isSafeInteger(value)) {
+            throw new Error(`Expected a safe integer or decimal string for i64, got ${value}`)
+          }
+          writer.writeI64(value)
+        } else if (typeof value === 'string') {
+          if (!/^[+-]?\d+$/.test(value)) {
+            throw new Error(`Expected a decimal integer string for i64, got ${value}`)
+          }
+          writer.writeI64(BigInt(value))
+        } else {
+          throw new Error(`Expected bigint/number/string for i64, got ${typeof value}`)
+        }
+        return
+      }
+      case 'double': {
+        const num = numberValue(value, type)
+        writer.writeDouble(num)
+        return
+      }
+      case 'string':
+      case 'binary': {
+        if (typeof value !== 'string') throw new Error(`Expected string, got ${typeof value}`)
+        writer.writeString(value)
+        return
+      }
+      default: {
+        if (ast.enum && ast.enum[type]) {
+          const enumItem =
+            typeof value === 'string'
+              ? ast.enum[type].items.find((item) => item.name === value)
+              : undefined
+          const num = enumItem?.value ?? numberValue(value, `enum ${type}`)
+          if (!Number.isInteger(num) || num < -2147483648 || num > 2147483647) {
+            throw new Error(`Expected a signed 32-bit integer for enum ${type}, got ${value}`)
+          }
+          writer.writeI32(num)
+          return
+        }
+        if (ast.struct && ast.struct[type]) {
+          writeCompactStruct(writer, value, type, ast)
+          return
+        }
+        if (ast.exception && ast.exception[type]) {
+          writeCompactStruct(writer, value, type, ast)
+          return
+        }
+        if (ast.union && ast.union[type]) {
+          writeCompactUnion(writer, value, type, ast)
+          return
+        }
+        throw new Error(`Unknown type: ${type}`)
+      }
+    }
+  }
+
+  switch (type.name) {
+    case 'list':
+    case 'set': {
+      if (!Array.isArray(value)) throw new Error(`Expected array for ${type.name}, got ${typeof value}`)
+      const itemTypeId = getCompactTypeId(type.valueType, ast)
+      if (value.length < 15) {
+        writer.writeByte((value.length << 4) | itemTypeId)
+      } else {
+        writer.writeByte((15 << 4) | itemTypeId)
+        writer.writeVarint(BigInt(value.length), 5)
+      }
+      for (const item of value) {
+        writeCompactValue(writer, item, type.valueType, ast)
+      }
+      return
+    }
+    case 'map': {
+      if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+        throw new Error(`Expected object for map, got ${typeof value}`)
+      }
+      const entries = Object.entries(value)
+      writer.writeVarint(BigInt(entries.length), 5)
+      if (entries.length === 0) return
+      const keyTypeId = getCompactTypeId(type.keyType, ast)
+      const valTypeId = getCompactTypeId(type.valueType, ast)
+      writer.writeByte((keyTypeId << 4) | valTypeId)
+      for (const [k, v] of entries) {
+        writeCompactValue(writer, k, type.keyType, ast)
+        writeCompactValue(writer, v, type.valueType, ast)
+      }
+      return
+    }
+  }
+}
+
+function writeCompactStruct(
+  writer: ThriftCompactWriter,
+  value: unknown,
+  structName: string,
+  ast: ThriftAST,
+) {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+    throw new Error(`Expected object for struct ${structName}, got ${typeof value}`)
+  }
+
+  const fields = ast.struct?.[structName] ?? ast.exception?.[structName]
+  if (!fields) throw new Error(`Unknown struct or exception: ${structName}`)
+
+  const obj = value as Record<string, unknown>
+  const sortedFields = [...fields].sort((a, b) => a.id - b.id)
+
+  let previousFieldId = 0
+  for (const field of sortedFields) {
+    const fieldValue = obj[field.name]
+    if (fieldValue === undefined || fieldValue === null) {
+      if (field.option === 'required') {
+        throw new Error(`Missing required field: ${field.name} in struct ${structName}`)
+      }
+      continue
+    }
+
+    const typeId = getCompactTypeId(field.type, ast)
+    const delta = field.id - previousFieldId
+
+    if (isCompactBoolType(field.type, ast)) {
+      if (typeof fieldValue !== 'boolean') {
+        throw new Error(`Expected boolean for field ${field.name}, got ${typeof fieldValue}`)
+      }
+      const boolType = fieldValue ? COMPACT_TRUE : COMPACT_FALSE
+      if (delta >= 1 && delta <= 15) {
+        writer.writeByte((delta << 4) | boolType)
+      } else {
+        writer.writeByte(boolType)
+        writer.writeSignedVarint(BigInt(delta), 3)
+      }
+    } else {
+      if (delta >= 1 && delta <= 15) {
+        writer.writeByte((delta << 4) | typeId)
+      } else {
+        writer.writeByte(typeId)
+        writer.writeSignedVarint(BigInt(delta), 3)
+      }
+      writeCompactValue(writer, fieldValue, field.type, ast)
+    }
+
+    previousFieldId = field.id
+  }
+
+  writer.writeByte(0) // STOP
+}
+
+function writeCompactUnion(
+  writer: ThriftCompactWriter,
+  value: unknown,
+  unionName: string,
+  ast: ThriftAST,
+) {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+    throw new Error(`Expected object for union ${unionName}, got ${typeof value}`)
+  }
+
+  const fields = ast.union?.[unionName]
+  if (!fields) throw new Error(`Unknown union: ${unionName}`)
+
+  const obj = value as Record<string, unknown>
+  let written = false
+  let previousFieldId = 0
+
+  for (const field of fields) {
+    const fieldValue = obj[field.name]
+    if (fieldValue !== undefined && fieldValue !== null) {
+      if (written) {
+        throw new Error(`Union ${unionName} must have only one field set, but multiple were provided`)
+      }
+      const typeId = getCompactTypeId(field.type, ast)
+      const delta = field.id - previousFieldId
+
+      if (isCompactBoolType(field.type, ast)) {
+        if (typeof fieldValue !== 'boolean') {
+          throw new Error(`Expected boolean for field ${field.name}, got ${typeof fieldValue}`)
+        }
+        const boolType = fieldValue ? COMPACT_TRUE : COMPACT_FALSE
+        if (delta >= 1 && delta <= 15) {
+          writer.writeByte((delta << 4) | boolType)
+        } else {
+          writer.writeByte(boolType)
+          writer.writeSignedVarint(BigInt(delta), 3)
+        }
+      } else {
+        if (delta >= 1 && delta <= 15) {
+          writer.writeByte((delta << 4) | typeId)
+        } else {
+          writer.writeByte(typeId)
+          writer.writeSignedVarint(BigInt(delta), 3)
+        }
+        writeCompactValue(writer, fieldValue, field.type, ast)
+      }
+
+      written = true
+      previousFieldId = field.id
+    }
+  }
+
+  if (!written) {
+    throw new Error(`Union ${unionName} must have exactly one field set`)
+  }
+
+  writer.writeByte(0) // STOP
+}
+
+export function serializeThriftCompact(ast: ThriftAST, structName: string, data: unknown): Buffer {
+  const writer = new ThriftCompactWriter()
+  if (ast.union?.[structName]) {
+    writeCompactUnion(writer, data, structName, ast)
+  } else {
+    writeCompactStruct(writer, data, structName, ast)
+  }
+  return writer.finish()
 }

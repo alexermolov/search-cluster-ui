@@ -47,6 +47,7 @@ import {
 } from './kafka'
 import {
   decodeThriftBinary,
+  decodeThriftCompact,
   getThriftStructNames,
   parseThriftIDL,
 } from './thrift'
@@ -223,12 +224,21 @@ export function registerIpcHandlers(
   })
   ipcMain.handle(
     IPC.KafkaThriftDecode,
-    (_e, valueBase64: string, idl: string, structName: string) => {
+    (
+      _e,
+      valueBase64: string,
+      idl: string,
+      structName: string,
+      protocol?: 'binary' | 'compact',
+    ) => {
       if (!/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/.test(valueBase64)) {
         throw new Error('Invalid encoded Thrift message')
       }
       const ast = parseThriftIDL(idl)
-      return decodeThriftBinary(ast, structName, Buffer.from(valueBase64, 'base64'))
+      const buffer = Buffer.from(valueBase64, 'base64')
+      return protocol === 'compact'
+        ? decodeThriftCompact(ast, structName, buffer)
+        : decodeThriftBinary(ast, structName, buffer)
     },
   )
 

@@ -190,7 +190,7 @@ export interface KafkaMessageProduceInput {
   key: string | null
   value: string
   format?: 'raw' | 'json' | 'thrift'
-  thrift?: { idl: string; structName: string }
+  thrift?: { idl: string; structName: string; protocol?: 'binary' | 'compact' }
 }
 
 export interface KafkaBatchProduceInput {
@@ -198,7 +198,7 @@ export interface KafkaBatchProduceInput {
   key: string | null
   value: string
   format?: 'raw' | 'json' | 'thrift'
-  thrift?: { idl: string; structName: string }
+  thrift?: { idl: string; structName: string; protocol?: 'binary' | 'compact' }
   count: number
   threads: number
   batchSize: number
@@ -411,7 +411,7 @@ export interface ElectronApi {
   produceKafkaBatch(connectionId: string, input: KafkaBatchProduceInput): Promise<{ sent: number; failed: number; errors: string[]; tookMs: number }>
   openKafkaThriftContract(): Promise<{ path: string; content: string } | null>
   parseThriftIDL(idl: string): Promise<string[]>
-  decodeKafkaThrift(valueBase64: string, idl: string, structName: string): Promise<unknown>
+  decodeKafkaThrift(valueBase64: string, idl: string, structName: string, protocol?: 'binary' | 'compact'): Promise<unknown>
   listRedisConnections(): Promise<StoredRedisConnection[]>
   saveRedisConnection(input: RedisConnectionInput): Promise<StoredRedisConnection>
   deleteRedisConnection(id: string): Promise<void>

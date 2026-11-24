@@ -110,12 +110,13 @@ export function KafkaBatchSendDialog({
         return;
       }
     }
+    let profile: ThriftProfile | undefined;
     if (draft.format === "thrift") {
       if (!draft.thriftProfileId) {
         setError("Please select a Thrift profile");
         return;
       }
-      const profile = profiles.find((p) => p.id === draft.thriftProfileId);
+      profile = profiles.find((p) => p.id === draft.thriftProfileId);
       if (!profile) {
         setError("Selected Thrift profile not found");
         return;
@@ -135,8 +136,8 @@ export function KafkaBatchSendDialog({
         value: draft.value,
         format: draft.format,
         thrift:
-          draft.format === "thrift"
-            ? { idl: draft.thriftIdl, structName: draft.thriftStruct }
+          draft.format === "thrift" && profile
+            ? { idl: draft.thriftIdl, structName: draft.thriftStruct, protocol: profile.protocol }
             : undefined,
         count: draft.count,
         threads: draft.threads,

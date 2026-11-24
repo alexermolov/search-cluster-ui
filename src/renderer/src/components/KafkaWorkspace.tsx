@@ -515,12 +515,13 @@ function KafkaProduceDialog({
         return;
       }
     }
+    let profile: ThriftProfile | undefined;
     if (draft.format === "thrift") {
       if (!draft.thriftProfileId) {
         setError("Please select a Thrift profile");
         return;
       }
-      const profile = profiles.find((p) => p.id === draft.thriftProfileId);
+      profile = profiles.find((p) => p.id === draft.thriftProfileId);
       if (!profile) {
         setError("Selected Thrift profile not found");
         return;
@@ -539,8 +540,8 @@ function KafkaProduceDialog({
         value: draft.value,
         format: draft.format,
         thrift:
-          draft.format === "thrift"
-            ? { idl: draft.thriftIdl, structName: draft.thriftStruct }
+          draft.format === "thrift" && profile
+            ? { idl: draft.thriftIdl, structName: draft.thriftStruct, protocol: profile.protocol }
             : undefined,
       });
       onClose();
@@ -727,11 +728,13 @@ function KafkaMessageAccordion({
   message,
   thriftIdl,
   structName,
+  protocol,
   loadingProfile,
 }: {
   message: KafkaMessage;
   thriftIdl: string | null;
   structName: string;
+  protocol: "binary" | "compact";
   loadingProfile: boolean;
 }) {
   const [decodedJson, setDecodedJson] = useState<string | null>(null);
@@ -742,7 +745,7 @@ function KafkaMessageAccordion({
   useEffect(() => {
     setDecodedJson(null);
     setError(null);
-  }, [thriftIdl, structName]);
+  }, [thriftIdl, structName, protocol]);
 
   async function toggleDecode(): Promise<void> {
     if (decodedJson !== null) {
@@ -758,6 +761,7 @@ function KafkaMessageAccordion({
         message.valueBase64,
         thriftIdl,
         structName,
+        protocol,
       );
       setDecodedJson(JSON.stringify(value, null, 2) ?? "null");
       if (detailsRef.current) detailsRef.current.open = true;
@@ -2161,6 +2165,7 @@ export function KafkaWorkspace({ onClose }: { onClose: () => void }) {
                       message={message}
                       thriftIdl={selectedProfile?.idl ?? null}
                       structName={selectedStructName}
+                      protocol={selectedProfile?.protocol ?? "binary"}
                       loadingProfile={loadingProfileStructs}
                     />
                   ))}

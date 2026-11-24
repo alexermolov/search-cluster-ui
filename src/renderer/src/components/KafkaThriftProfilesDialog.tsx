@@ -18,6 +18,7 @@ export function KafkaThriftProfilesDialog({
   const [idl, setIdl] = useState("");
   const [structs, setStructs] = useState<string[]>([]);
   const [structName, setStructName] = useState("");
+  const [protocol, setProtocol] = useState<"binary" | "compact">("binary");
   const [parsing, setParsing] = useState(false);
   const [parseError, setParseError] = useState<string | null>(null);
 
@@ -57,6 +58,7 @@ export function KafkaThriftProfilesDialog({
       setName(editingProfile.name);
       setIdl(editingProfile.idl);
       setStructName(editingProfile.structName);
+      setProtocol(editingProfile.protocol ?? "binary");
       setStructs([]);
       setParseError(null);
       void parseIdl(editingProfile.idl, editingProfile.structName);
@@ -64,6 +66,7 @@ export function KafkaThriftProfilesDialog({
       setName("");
       setIdl("");
       setStructName("");
+      setProtocol("binary");
       setStructs([]);
       setParseError(null);
     }
@@ -76,6 +79,7 @@ export function KafkaThriftProfilesDialog({
       name: name.trim(),
       idl: idl.trim(),
       structName,
+      protocol,
     };
     if (editingProfile) {
       onChange(profiles.map((p) => (p.id === editingProfile.id ? updated : p)));
@@ -112,7 +116,7 @@ export function KafkaThriftProfilesDialog({
               <div key={profile.id} className="kafka-profile-row">
                 <div className="kafka-profile-info">
                   <strong>{profile.name}</strong>
-                  <span className="muted">{profile.structName}</span>
+                  <span className="muted">{profile.structName} · {profile.protocol ?? 'binary'}</span>
                 </div>
                 <div className="kafka-profile-actions">
                   <button
@@ -189,6 +193,17 @@ export function KafkaThriftProfilesDialog({
                 </select>
               </label>
             )}
+            <label className="field">
+              <span>Protocol</span>
+              <select
+                className="input"
+                value={protocol}
+                onChange={(event) => setProtocol(event.target.value as "binary" | "compact")}
+              >
+                <option value="binary">TBinaryProtocol</option>
+                <option value="compact">TCompactProtocol</option>
+              </select>
+            </label>
             <div className="modal-footer">
               <button className="btn" onClick={() => setEditingId(null)}>
                 Cancel

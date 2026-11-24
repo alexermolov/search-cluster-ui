@@ -123,8 +123,8 @@ const api: ElectronApi = {
   openKafkaThriftContract: () =>
     ipcRenderer.invoke(IPC.KafkaThriftContractOpen),
   parseThriftIDL: (idl) => ipcRenderer.invoke(IPC.KafkaThriftParse, idl),
-  decodeKafkaThrift: (valueBase64, idl, structName) =>
-    ipcRenderer.invoke(IPC.KafkaThriftDecode, valueBase64, idl, structName),
+  decodeKafkaThrift: (valueBase64, idl, structName, protocol) =>
+    ipcRenderer.invoke(IPC.KafkaThriftDecode, valueBase64, idl, structName, protocol),
   listRedisConnections: () => ipcRenderer.invoke(IPC.RedisConnectionsList),
   saveRedisConnection: (input) => ipcRenderer.invoke(IPC.RedisConnectionsSave, input),
   deleteRedisConnection: (id) => ipcRenderer.invoke(IPC.RedisConnectionsDelete, id),

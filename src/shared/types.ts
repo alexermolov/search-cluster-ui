@@ -431,4 +431,5 @@ export interface ThriftProfile {
   name: string
   idl: string
   structName: string
+  protocol?: 'binary' | 'compact'
 }

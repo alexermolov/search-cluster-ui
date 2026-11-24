@@ -36,7 +36,7 @@ import type {
   KafkaTopicInfo,
   StoredKafkaConnection,
 } from '../shared/types'
-import { parseThriftIDL, serializeThriftBinary } from './thrift'
+import { parseThriftIDL, serializeThriftBinary, serializeThriftCompact } from './thrift'
 import type { ThriftAST } from './thrift'
 
 export type KafkaConnection = KafkaConnectionInput | StoredKafkaConnection
@@ -466,7 +466,7 @@ export async function fetchKafkaConsumerGroups(
 async function buildMessageValue(
   value: string,
   format?: 'raw' | 'json' | 'thrift',
-  thrift?: { idl: string; structName: string },
+  thrift?: { idl: string; structName: string; protocol?: 'binary' | 'compact' },
 ): Promise<string | Buffer> {
   if (format === 'thrift') {
     if (!thrift?.idl.trim()) throw new Error('Thrift IDL is required')
@@ -485,7 +485,9 @@ async function buildMessageValue(
       throw new Error('Message value must be valid JSON for Thrift serialization')
     }
     try {
-      return serializeThriftBinary(ast, thrift.structName, data)
+      return thrift.protocol === 'compact'
+        ? serializeThriftCompact(ast, thrift.structName, data)
+        : serializeThriftBinary(ast, thrift.structName, data)
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e)
       throw new Error(`Thrift serialization failed: ${msg}`)
@@ -546,7 +548,9 @@ export async function produceKafkaBatch(
     if (thriftAst && input.thrift) {
       const parsed = JSON.parse(rawValue)
       const templated = applyTemplateToValue(parsed, idx)
-      return serializeThriftBinary(thriftAst, input.thrift.structName, templated)
+      return input.thrift.protocol === 'compact'
+        ? serializeThriftCompact(thriftAst, input.thrift.structName, templated)
+        : serializeThriftBinary(thriftAst, input.thrift.structName, templated)
     }
     return applyTemplate(rawValue, idx)
   }
