@@ -110,6 +110,7 @@ class CachedClient {
   kafka: Kafka
   adminInstance: Admin | null = null
   producerInstance: Producer | null = null
+  private producerConnecting: Promise<Producer> | null = null
 
   constructor(kafka: Kafka) {
     this.kafka = kafka
@@ -124,11 +125,40 @@ class CachedClient {
   }
 
   async producer() {
-    if (!this.producerInstance) {
-      this.producerInstance = this.kafka.producer()
-      await this.producerInstance.connect()
+    if (this.producerInstance) {
+      return this.producerInstance
     }
-    return this.producerInstance
+    if (!this.producerConnecting) {
+      this.producerConnecting = (async () => {
+        const producer = this.kafka.producer()
+        await producer.connect()
+        return producer
+      })()
+    }
+    const producer = await this.producerConnecting
+    this.producerInstance = producer
+    this.producerConnecting = null
+    return producer
+  }
+
+  async send(record: { topic: string; messages: { key?: string; value: string | Buffer }[] }): Promise<void> {
+    const attempt = async () => {
+      const producer = await this.producer()
+      await producer.send(record)
+    }
+    try {
+      await attempt()
+    } catch (err: any) {
+      if (
+        err.message?.includes('The producer is disconnected') ||
+        err.message?.includes('disconnected')
+      ) {
+        this.producerInstance = null
+        await attempt()
+      } else {
+        throw err
+      }
+    }
   }
 
   async disconnect() {
@@ -140,13 +170,15 @@ class CachedClient {
       }
       this.adminInstance = null
     }
-    if (this.producerInstance) {
+    if (this.producerInstance || this.producerConnecting) {
       try {
-        await this.producerInstance.disconnect()
+        const producer = this.producerInstance ?? (await this.producerConnecting!)
+        await producer.disconnect()
       } catch {
         /* ignore */
       }
       this.producerInstance = null
+      this.producerConnecting = null
     }
   }
 }
@@ -523,8 +555,7 @@ export async function produceKafkaMessage(
   const messageValue = await buildMessageValue(value, format, thrift)
 
   const client = cache.get(config)
-  const producer = await client.producer()
-  await producer.send({
+  await client.send({
     topic: topic.trim(),
     messages: [{ ...(key !== null ? { key } : {}), value: messageValue }],
   })
@@ -572,7 +603,6 @@ export async function produceKafkaBatch(
   }
 
   const client = cache.get(config)
-  const producer = await client.producer()
 
   const { topic, count, threads, batchSize, key } = input
   const startTime = Date.now()
@@ -594,7 +624,7 @@ export async function produceKafkaBatch(
         messages.push({ ...(finalKey !== undefined ? { key: finalKey } : {}), value })
       }
       try {
-        await producer.send({ topic: topic.trim(), messages })
+        await client.send({ topic: topic.trim(), messages })
         wSent += messages.length
       } catch (err) {
         wFailed += messages.length
@@ -604,15 +634,11 @@ export async function produceKafkaBatch(
     return { sent: wSent, failed: wFailed, errors: wErrors }
   }
 
-  try {
-    const results = await Promise.all(Array.from({ length: threads }, (_, i) => worker(i)))
-    const sent = results.reduce((sum, r) => sum + r.sent, 0)
-    const failed = results.reduce((sum, r) => sum + r.failed, 0)
-    const errors = results.flatMap((r) => r.errors)
-    return { sent, failed, errors, tookMs: Date.now() - startTime }
-  } finally {
-    await producer.disconnect()
-  }
+  const results = await Promise.all(Array.from({ length: threads }, (_, i) => worker(i)))
+  const sent = results.reduce((sum, r) => sum + r.sent, 0)
+  const failed = results.reduce((sum, r) => sum + r.failed, 0)
+  const errors = results.flatMap((r) => r.errors)
+  return { sent, failed, errors, tookMs: Date.now() - startTime }
 }
 
 function decode(buffer: Buffer | null): string | null {
