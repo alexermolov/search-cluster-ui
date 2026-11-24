@@ -781,19 +781,25 @@ function KafkaTopicDetailDialog({
   topic,
   partitions,
   consumerGroups,
-  loading,
+  loadingPartitions,
+  loadingConsumerGroups,
   onClose,
 }: {
   topic: string;
   partitions: KafkaPartitionInfo[];
   consumerGroups: KafkaConsumerGroupInfo[];
-  loading: boolean;
+  loadingPartitions: boolean;
+  loadingConsumerGroups: boolean;
   onClose: () => void;
 }) {
   const [tab, setTab] = useState<"partitions" | "groups">("partitions");
 
   const topicGroups = useMemo(() => {
-    return consumerGroups.filter((g) => topic in g.lag);
+    return consumerGroups.filter((g) =>
+      g.members.some((member) =>
+        member.assignments.some((assignment) => assignment.topic === topic),
+      ),
+    );
   }, [consumerGroups, topic]);
 
   return (
@@ -820,94 +826,104 @@ function KafkaTopicDetailDialog({
           </button>
         </div>
 
-        {loading && <div className="muted">Loading…</div>}
-
-        {!loading && tab === "partitions" && (
-          <div style={{ overflow: "auto" }}>
-            <table className="kafka-partition-table">
-              <thead>
-                <tr>
-                  <th>Partition</th>
-                  <th>Leader</th>
-                  <th>Replicas</th>
-                  <th>ISR</th>
-                  <th>Low Offset</th>
-                  <th>High Offset</th>
-                </tr>
-              </thead>
-              <tbody>
-                {partitions.map((p) => (
-                  <tr key={p.partition}>
-                    <td>{p.partition}</td>
-                    <td>{p.leader ?? "-"}</td>
-                    <td>{p.replicas.join(", ")}</td>
-                    <td>{p.isr.join(", ")}</td>
-                    <td>{p.lowOffset}</td>
-                    <td>{p.highOffset}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-
-        {!loading && tab === "groups" && (
-          <div style={{ overflow: "auto" }}>
-            {topicGroups.length === 0 && (
-              <div className="kafka-empty-groups">
-                No consumer groups for this topic
+        {tab === "partitions" && (
+          <>
+            {loadingPartitions ? (
+              <div className="muted">Loading partitions…</div>
+            ) : (
+              <div style={{ overflow: "auto" }}>
+                <table className="kafka-partition-table">
+                  <thead>
+                    <tr>
+                      <th>Partition</th>
+                      <th>Leader</th>
+                      <th>Replicas</th>
+                      <th>ISR</th>
+                      <th>Low Offset</th>
+                      <th>High Offset</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {partitions.map((p) => (
+                      <tr key={p.partition}>
+                        <td>{p.partition}</td>
+                        <td>{p.leader ?? "-"}</td>
+                        <td>{p.replicas.join(", ")}</td>
+                        <td>{p.isr.join(", ")}</td>
+                        <td>{p.lowOffset}</td>
+                        <td>{p.highOffset}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
               </div>
             )}
-            {topicGroups.map((group) => (
-              <div className="kafka-consumer-group" key={group.groupId}>
-                <div className="kafka-consumer-group-header">
-                  <span className="group-id">{group.groupId}</span>
-                  <span
-                    className={`group-state state-${group.state.toLowerCase()}`}
-                  >
-                    {group.state}
-                  </span>
-                </div>
-                <div className="kafka-consumer-group-body">
-                  <div className="group-members">
-                    Protocol: {group.protocol || "—"} · Members:{" "}
-                    {group.members.length}
+          </>
+        )}
+
+        {tab === "groups" && (
+          <>
+            {loadingConsumerGroups ? (
+              <div className="muted">Loading consumer groups…</div>
+            ) : (
+              <div style={{ overflow: "auto" }}>
+                {topicGroups.length === 0 && (
+                  <div className="kafka-empty-groups">
+                    No consumer groups for this topic
                   </div>
-                  {group.lag[topic] &&
-                    Object.keys(group.lag[topic]).length > 0 && (
-                      <table className="kafka-lag-table">
-                        <thead>
-                          <tr>
-                            <th>Partition</th>
-                            <th>Lag</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {Object.entries(group.lag[topic])
-                            .sort(([a], [b]) => Number(a) - Number(b))
-                            .map(([partition, lag]) => (
-                              <tr key={partition}>
-                                <td>{partition}</td>
-                                <td
-                                  className={
-                                    lag > 1000
-                                      ? "lag-high"
-                                      : lag > 100
-                                        ? "lag-medium"
-                                        : "lag-low"
-                                  }
-                                >
-                                  {lag.toLocaleString()}
-                                </td>
+                )}
+                {topicGroups.map((group) => (
+                  <div className="kafka-consumer-group" key={group.groupId}>
+                    <div className="kafka-consumer-group-header">
+                      <span className="group-id">{group.groupId}</span>
+                      <span
+                        className={`group-state state-${group.state.toLowerCase()}`}
+                      >
+                        {group.state}
+                      </span>
+                    </div>
+                    <div className="kafka-consumer-group-body">
+                      <div className="group-members">
+                        Protocol: {group.protocol || "—"} · Members:{" "}
+                        {group.members.length}
+                      </div>
+                      {group.lag[topic] &&
+                        Object.keys(group.lag[topic]).length > 0 && (
+                          <table className="kafka-lag-table">
+                            <thead>
+                              <tr>
+                                <th>Partition</th>
+                                <th>Lag</th>
                               </tr>
-                            ))}
-                        </tbody>
-                      </table>
-                    )}
-                </div>
+                            </thead>
+                            <tbody>
+                              {Object.entries(group.lag[topic])
+                                .sort(([a], [b]) => Number(a) - Number(b))
+                                .map(([partition, lag]) => (
+                                  <tr key={partition}>
+                                    <td>{partition}</td>
+                                    <td
+                                      className={
+                                        lag > 1000
+                                          ? "lag-high"
+                                          : lag > 100
+                                            ? "lag-medium"
+                                            : "lag-low"
+                                      }
+                                    >
+                                      {lag.toLocaleString()}
+                                    </td>
+                                  </tr>
+                                ))}
+                            </tbody>
+                          </table>
+                        )}
+                    </div>
+                  </div>
+                ))}
               </div>
-            ))}
-          </div>
+            )}
+          </>
         )}
 
         <div className="modal-footer">
@@ -995,7 +1011,8 @@ export function KafkaWorkspace({ onClose }: { onClose: () => void }) {
   const [consumerGroups, setConsumerGroups] = useState<
     KafkaConsumerGroupInfo[]
   >([]);
-  const [loadingDetail, setLoadingDetail] = useState(false);
+  const [loadingPartitions, setLoadingPartitions] = useState(false);
+  const [loadingConsumerGroups, setLoadingConsumerGroups] = useState(false);
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [toolsOpen, setToolsOpen] = useState(false);
   const topicRequest = useRef(0);
@@ -1355,19 +1372,38 @@ export function KafkaWorkspace({ onClose }: { onClose: () => void }) {
       setDetailTopic(topic);
       setPartitions([]);
       setConsumerGroups([]);
-      setLoadingDetail(true);
+      setLoadingPartitions(true);
+      setLoadingConsumerGroups(true);
       setError(null);
-      try {
-        const [parts, groups] = await Promise.all([
-          api.fetchKafkaTopicPartitions(active.id, topic),
-          api.fetchKafkaConsumerGroups(active.id, topic),
-        ]);
-        setPartitions(parts);
-        setConsumerGroups(groups);
-      } catch (reason) {
-        setError(errorMessage(reason));
-      } finally {
-        setLoadingDetail(false);
+
+      const errors: string[] = [];
+
+      const loadPartitions = async () => {
+        try {
+          const result = await api.fetchKafkaTopicPartitions(active.id, topic);
+          setPartitions(result);
+        } catch (reason) {
+          errors.push(errorMessage(reason));
+        } finally {
+          setLoadingPartitions(false);
+        }
+      };
+
+      const loadConsumerGroups = async () => {
+        try {
+          const result = await api.fetchKafkaConsumerGroups(active.id, undefined, false);
+          setConsumerGroups(result);
+        } catch (reason) {
+          errors.push(errorMessage(reason));
+        } finally {
+          setLoadingConsumerGroups(false);
+        }
+      };
+
+      await Promise.allSettled([loadPartitions(), loadConsumerGroups()]);
+
+      if (errors.length > 0) {
+        setError(errors.join("; "));
       }
     },
     [active],
@@ -2200,7 +2236,8 @@ export function KafkaWorkspace({ onClose }: { onClose: () => void }) {
           topic={detailTopic}
           partitions={partitions}
           consumerGroups={consumerGroups}
-          loading={loadingDetail}
+          loadingPartitions={loadingPartitions}
+          loadingConsumerGroups={loadingConsumerGroups}
           onClose={() => setDetailTopic(null)}
         />
       )}
