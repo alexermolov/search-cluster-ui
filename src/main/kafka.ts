@@ -334,21 +334,24 @@ export async function fetchKafkaConsumerGroups(
 
   const { groups: descriptions } = await admin.describeGroups(groupIds)
 
-  const relevantGroupIds = topic
+  // Groups with active member assignments for the topic
+  const assignmentGroupIds = topic
     ? descriptions
         .filter((desc) =>
           desc.members.some((member) => topic in parseMemberAssignment(member.memberAssignment)),
         )
         .map((desc) => desc.groupId)
     : groupIds
-  if (relevantGroupIds.length === 0) return []
 
   // Keep the number of concurrent broker requests bounded on large clusters.
   const offsetMap = new Map<string, Map<string, Map<number, string>>>()
   if (includeLag) {
-    for (let offset = 0; offset < relevantGroupIds.length; offset += KAFKA_OFFSET_CONCURRENCY) {
+    // When filtering by topic, fetch offsets for ALL groups so we can also
+    // discover groups that have stored offsets for the topic but no active members.
+    const groupsToFetchOffsets = topic ? groupIds : assignmentGroupIds
+    for (let offset = 0; offset < groupsToFetchOffsets.length; offset += KAFKA_OFFSET_CONCURRENCY) {
       await Promise.all(
-        relevantGroupIds.slice(offset, offset + KAFKA_OFFSET_CONCURRENCY).map(async (groupId) => {
+        groupsToFetchOffsets.slice(offset, offset + KAFKA_OFFSET_CONCURRENCY).map(async (groupId) => {
           try {
             const offsets = await admin.fetchOffsets({ groupId, resolveOffsets: true })
             const topicMap = new Map<string, Map<number, string>>()
@@ -367,6 +370,16 @@ export async function fetchKafkaConsumerGroups(
       )
     }
   }
+
+  // Final relevant groups: either have active assignments OR stored offsets for the topic
+  const relevantGroupIds = topic
+    ? groupIds.filter(
+        (groupId) =>
+          assignmentGroupIds.includes(groupId) ||
+          (offsetMap.has(groupId) && offsetMap.get(groupId)!.has(topic)),
+      )
+    : groupIds
+  if (relevantGroupIds.length === 0) return []
 
   // Fetch high watermarks for relevant topics in parallel
   const allTopics = new Set<string>()
