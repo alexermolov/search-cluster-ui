@@ -842,6 +842,11 @@ export function RedisWorkspace({ onClose }: { onClose: () => void }) {
     [],
   );
 
+  const reloadKeysRef = useRef(reloadKeys);
+  const loadServerRef = useRef(loadServer);
+  reloadKeysRef.current = reloadKeys;
+  loadServerRef.current = loadServer;
+
   const activate = useCallback(
     async (connectionId: string): Promise<void> => {
       keyRequest.current += 1;
@@ -864,12 +869,13 @@ export function RedisWorkspace({ onClose }: { onClose: () => void }) {
         setConnections(items);
         if (items[0]) {
           setActiveId(items[0].id);
-          void reloadKeys(items[0].id);
-          void loadServer(items[0].id);
+          void reloadKeysRef.current(items[0].id);
+          void loadServerRef.current(items[0].id);
         }
       })
       .catch((reason: unknown) => setError(errorMessage(reason)));
-  }, [reloadKeys, loadServer]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
