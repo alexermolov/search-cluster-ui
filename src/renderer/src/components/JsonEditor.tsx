@@ -21,6 +21,8 @@ interface Props {
   readOnly?: boolean;
   /** Optional completion source (e.g. index field autocompletion). */
   completions?: CompletionSource;
+  className?: string;
+  style?: React.CSSProperties;
 }
 
 /**
@@ -35,6 +37,8 @@ export function JsonEditor({
   minHeight = "160px",
   readOnly = false,
   completions,
+  className,
+  style,
 }: Props) {
   const hostRef = useRef<HTMLDivElement | null>(null);
   const viewRef = useRef<EditorView | null>(null);
@@ -122,5 +126,11 @@ export function JsonEditor({
     }
   }, [value]);
 
-  return <div className="cm-editor-wrap" style={{ minHeight }} ref={hostRef} />;
+  return (
+    <div
+      className={`cm-editor-wrap ${className ?? ""}`.trim()}
+      style={{ minHeight, ...style }}
+      ref={hostRef}
+    />
+  );
 }

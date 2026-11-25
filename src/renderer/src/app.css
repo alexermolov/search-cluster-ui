@@ -164,6 +164,13 @@ body {
     font-weight: 650;
 }
 
+.product-picker-version {
+    font-size: 12px;
+    font-weight: 500;
+    color: var(--text-dim);
+    opacity: 0.75;
+}
+
 .product-picker-eyebrow {
     margin: 0 0 8px;
     color: var(--accent);
@@ -928,6 +935,34 @@ body {
 
 .kafka-produce-modal {
     width: min(760px, 94vw);
+    resize: both;
+    overflow: auto;
+}
+
+.kafka-produce-editor {
+    flex: 1;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+}
+
+.kafka-produce-editor textarea {
+    flex: 1;
+    min-height: 0;
+    resize: none;
+    font-family: var(--mono);
+}
+
+.kafka-produce-editor .cm-editor-wrap {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+}
+
+.kafka-produce-editor .cm-editor-wrap .cm-editor {
+    flex: 1;
+    min-height: 0;
 }
 
 .kafka-pem {
@@ -1992,6 +2027,10 @@ textarea.input {
     opacity: 0;
     pointer-events: none;
     cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    user-select: none;
 }
 
 .json-line:hover .json-quick-query,
@@ -2396,6 +2435,82 @@ textarea.input {
 .cm-editor-wrap .cm-scroller {
     font-family: var(--mono);
     line-height: 1.5;
+}
+
+/* floating search panel */
+.cm-editor-wrap .cm-panels.cm-panels-top {
+    position: absolute;
+    top: 8px;
+    right: 8px;
+    left: auto;
+    width: auto;
+    max-width: min(520px, calc(100% - 16px));
+    z-index: 20;
+    background: var(--bg-panel);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    box-shadow: 0 8px 30px rgba(0, 0, 0, 0.35);
+    padding: 0;
+    overflow: hidden;
+}
+
+.cm-panel.cm-search {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    align-items: center;
+    padding: 10px 12px;
+    font-size: 12px;
+}
+
+.cm-search input[name="search"],
+.cm-search input[name="replace"] {
+    background: var(--bg-input);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 5px 8px;
+    color: var(--text);
+    font-size: 13px;
+    min-width: 160px;
+    outline: none;
+}
+
+.cm-search input:focus {
+    border-color: var(--accent);
+}
+
+.cm-search button {
+    background: var(--bg-elevated);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 5px 10px;
+    color: var(--text);
+    cursor: pointer;
+    font-size: 12px;
+    transition: background .15s, border-color .15s;
+}
+
+.cm-search button:hover {
+    background: var(--accent);
+    border-color: var(--accent);
+    color: #fff;
+}
+
+.cm-search label {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 11px;
+    color: var(--text-dim);
+    cursor: pointer;
+    user-select: none;
+}
+
+.cm-search input[type="checkbox"] {
+    width: 14px;
+    height: 14px;
+    accent-color: var(--accent);
+    cursor: pointer;
 }
 
 /* ---------- JSON token colors ---------- */

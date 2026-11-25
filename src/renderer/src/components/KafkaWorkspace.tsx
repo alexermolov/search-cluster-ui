@@ -547,27 +547,31 @@ function KafkaProduceDialog({
         {draft.format === "raw" && (
           <label className="field">
             <span>Raw value</span>
-            <textarea
-              className="input mono"
-              value={draft.value}
-              onChange={(event) => onDraftChange({ value: event.target.value })}
-              rows={10}
-              placeholder="Free-form text"
-              style={{ minHeight: "180px", fontFamily: "monospace" }}
-            />
+            <div className="kafka-produce-editor">
+              <textarea
+                className="input mono"
+                value={draft.value}
+                onChange={(event) =>
+                  onDraftChange({ value: event.target.value })
+                }
+                placeholder="Free-form text"
+              />
+            </div>
           </label>
         )}
 
         {draft.format === "json" && (
           <div className="field">
             <span>JSON value</span>
-            <JsonEditor
-              value={draft.value}
-              onChange={(value) => onDraftChange({ value })}
-              onRun={() => void submit()}
-              placeholder="Enter a JSON value"
-              minHeight="180px"
-            />
+            <div className="kafka-produce-editor">
+              <JsonEditor
+                value={draft.value}
+                onChange={(value) => onDraftChange({ value })}
+                onRun={() => void submit()}
+                placeholder="Enter a JSON value"
+                minHeight="120px"
+              />
+            </div>
           </div>
         )}
 
@@ -612,13 +616,15 @@ function KafkaProduceDialog({
             </label>
             <div className="field">
               <span>JSON payload (will be serialized to Thrift binary)</span>
-              <JsonEditor
-                value={draft.value}
-                onChange={(value) => onDraftChange({ value })}
-                onRun={() => void submit()}
-                placeholder="Enter JSON matching the Thrift struct"
-                minHeight="160px"
-              />
+              <div className="kafka-produce-editor">
+                <JsonEditor
+                  value={draft.value}
+                  onChange={(value) => onDraftChange({ value })}
+                  onRun={() => void submit()}
+                  placeholder="Enter JSON matching the Thrift struct"
+                  minHeight="120px"
+                />
+              </div>
             </div>
           </>
         )}

@@ -16,6 +16,7 @@ export function App() {
     "picker",
   );
   const [toolsOpen, setToolsOpen] = useState(false);
+  const appVersion = (import.meta.env.VITE_APP_VERSION as string) ?? "";
 
   useEffect(() => {
     void init();
@@ -36,6 +37,7 @@ export function App() {
             <div className="product-picker-brand">
               <span className="logo">◈</span>
               <span>Search Cluster UI</span>
+              <span className="product-picker-version">v{appVersion}</span>
             </div>
             <p className="product-picker-eyebrow">WELCOME</p>
             <h1>Choose a product</h1>
