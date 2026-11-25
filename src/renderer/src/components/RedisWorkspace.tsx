@@ -13,6 +13,7 @@ import type {
 import { api, errorMessage } from "../api";
 import { CommandPalettePanel, useRedisPaletteCommands } from "./CommandPalette";
 import { addToast } from "../toasts";
+import { readLastActiveId, writeLastActiveId } from "../lastActiveId";
 import { shareConnection, decodeFromBase64 } from "../share";
 import { ImportDialog } from "./ImportDialog";
 import { RedisKeyTree } from "./RedisKeyTree";
@@ -867,14 +868,21 @@ export function RedisWorkspace({ onClose }: { onClose: () => void }) {
   );
 
   useEffect(() => {
+    if (activeId) writeLastActiveId("redis", activeId);
+  }, [activeId]);
+
+  useEffect(() => {
     void api
       .listRedisConnections()
       .then((items) => {
         setConnections(items);
-        if (items[0]) {
-          setActiveId(items[0].id);
-          void reloadKeysRef.current(items[0].id);
-          void loadServerRef.current(items[0].id);
+        const lastId = readLastActiveId("redis");
+        const initialId =
+          items.find((c) => c.id === lastId)?.id ?? items[0]?.id ?? null;
+        if (initialId) {
+          setActiveId(initialId);
+          void reloadKeysRef.current(initialId);
+          void loadServerRef.current(initialId);
         }
       })
       .catch((reason: unknown) => setError(errorMessage(reason)));

@@ -21,6 +21,7 @@ import { JsonEditor } from "./JsonEditor";
 import { JsonView } from "./JsonView";
 import { CommandPalettePanel, useKafkaPaletteCommands } from "./CommandPalette";
 import { addToast } from "../toasts";
+import { readLastActiveId, writeLastActiveId } from "../lastActiveId";
 import { shareConnection, decodeFromBase64 } from "../share";
 import { ImportDialog } from "./ImportDialog";
 import { KafkaThriftProfilesDialog } from "./KafkaThriftProfilesDialog";
@@ -1152,6 +1153,10 @@ export function KafkaWorkspace({ onClose }: { onClose: () => void }) {
   );
 
   useEffect(() => {
+    if (activeId) writeLastActiveId("kafka", activeId);
+  }, [activeId]);
+
+  useEffect(() => {
     if (viewMode !== "consumers" || !activeId) return;
     void reloadConsumerGroups(activeId);
     return () => {
@@ -1164,9 +1169,12 @@ export function KafkaWorkspace({ onClose }: { onClose: () => void }) {
       .listKafkaConnections()
       .then((items) => {
         setConnections(items);
-        if (items[0]) {
-          setActiveId(items[0].id);
-          void reloadTopics(items[0].id);
+        const lastId = readLastActiveId("kafka");
+        const initialId =
+          items.find((c) => c.id === lastId)?.id ?? items[0]?.id ?? null;
+        if (initialId) {
+          setActiveId(initialId);
+          void reloadTopics(initialId);
         }
       })
       .catch((reason: unknown) => setError(errorMessage(reason)));

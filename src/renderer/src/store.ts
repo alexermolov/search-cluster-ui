@@ -2,6 +2,7 @@ import { create } from "zustand";
 import type { SaveConnectionInput } from "../../shared/ipc";
 import type { IndexInfo, Overview, StoredConnection } from "../../shared/types";
 import { api, errorMessage } from "./api";
+import { readLastActiveId, writeLastActiveId } from "./lastActiveId";
 
 export type Tab =
   | "overview"
@@ -153,13 +154,18 @@ export const useApp = create<AppStore>((set, get) => {
       try {
         const connections = await api.listConnections();
         set({ connections });
-        if (connections[0]) await get().selectConnection(connections[0].id);
+        const lastId = readLastActiveId("search");
+        const targetId = lastId && connections.some((c) => c.id === lastId)
+          ? lastId
+          : connections[0]?.id;
+        if (targetId) await get().selectConnection(targetId);
       } catch (e) {
         set({ error: errorMessage(e) });
       }
     },
 
     selectConnection: async (id) => {
+      writeLastActiveId("search", id);
       if (activeRequestId) api.cancelRequest(activeRequestId);
       const requestId = `req-${++requestSeq}`;
       activeRequestId = requestId;
@@ -273,6 +279,7 @@ export const useApp = create<AppStore>((set, get) => {
       if (nextActive) {
         await get().selectConnection(nextActive);
       } else {
+        writeLastActiveId("search", null);
         set({ activeId: null, overview: null, indices: [], error: null });
       }
     },
