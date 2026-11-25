@@ -935,6 +935,8 @@ body {
 
 .kafka-produce-modal {
     width: min(760px, 94vw);
+    min-width: 480px;
+    min-height: 320px;
     resize: both;
     overflow: auto;
 }
@@ -2457,7 +2459,7 @@ textarea.input {
 .cm-panel.cm-search {
     display: flex;
     flex-wrap: wrap;
-    gap: 6px;
+    gap: 8px;
     align-items: center;
     padding: 10px 12px;
     font-size: 12px;
@@ -2483,11 +2485,18 @@ textarea.input {
     background: var(--bg-elevated);
     border: 1px solid var(--border);
     border-radius: 6px;
-    padding: 5px 10px;
+    padding: 4px 10px;
     color: var(--text);
     cursor: pointer;
     font-size: 12px;
-    transition: background .15s, border-color .15s;
+    font-weight: 500;
+    line-height: 1;
+    white-space: nowrap;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 26px;
+    transition: background .15s, border-color .15s, color .15s;
 }
 
 .cm-search button:hover {
