@@ -24,6 +24,7 @@ import type {
 } from '../shared/ipc'
 import { applyTemplate, applyTemplateToValue } from './batchTemplate'
 import { serializeAvro } from './avro'
+import { serializeProtobuf } from './protobuf'
 import type {
   KafkaAuthConfig,
   KafkaConnectionInput,
@@ -514,9 +515,10 @@ export async function fetchKafkaConsumerGroups(
 
 async function buildMessageValue(
   value: string,
-  format?: 'raw' | 'json' | 'thrift' | 'avro',
+  format?: 'raw' | 'json' | 'thrift' | 'avro' | 'protobuf',
   thrift?: { idl: string; structName: string; protocol?: 'binary' | 'compact' },
   avro?: { schema: string },
+  protobuf?: { proto: string; messageName: string },
 ): Promise<string | Buffer> {
   if (format === 'thrift') {
     if (!thrift?.idl.trim()) throw new Error('Thrift IDL is required')
@@ -558,18 +560,34 @@ async function buildMessageValue(
       throw new Error(`Avro serialization failed: ${msg}`)
     }
   }
+  if (format === 'protobuf') {
+    if (!protobuf?.proto.trim()) throw new Error('Protobuf proto is required')
+    if (!protobuf.messageName) throw new Error('Protobuf message name is required')
+    let data: unknown
+    try {
+      data = JSON.parse(value)
+    } catch {
+      throw new Error('Message value must be valid JSON for Protobuf serialization')
+    }
+    try {
+      return serializeProtobuf(protobuf.proto, protobuf.messageName, data)
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e)
+      throw new Error(`Protobuf serialization failed: ${msg}`)
+    }
+  }
   return value
 }
 
 export async function produceKafkaMessage(
   cache: KafkaClientCache,
   config: KafkaConnection,
-  { topic, key, value, format, thrift, avro }: KafkaMessageProduceInput,
+  { topic, key, value, format, thrift, avro, protobuf }: KafkaMessageProduceInput,
 ): Promise<void> {
   if (!topic.trim()) throw new Error('A Kafka topic is required')
   if (!value) throw new Error('A message value is required')
 
-  const messageValue = await buildMessageValue(value, format, thrift, avro)
+  const messageValue = await buildMessageValue(value, format, thrift, avro, protobuf)
 
   const client = cache.get(config)
   await client.send({
@@ -599,7 +617,7 @@ export async function produceKafkaBatch(
 
   let cachedValue: string | Buffer | undefined
   if (!hasVariable) {
-    cachedValue = await buildMessageValue(input.value, input.format, input.thrift, input.avro)
+    cachedValue = await buildMessageValue(input.value, input.format, input.thrift, input.avro, input.protobuf)
   }
 
   const encode = (rawValue: string, idx: number): string | Buffer => {
@@ -620,6 +638,11 @@ export async function produceKafkaBatch(
       const parsed = JSON.parse(rawValue)
       const templated = applyTemplateToValue(parsed, idx)
       return serializeAvro(input.avro.schema, templated)
+    }
+    if (input.format === 'protobuf' && input.protobuf) {
+      const parsed = JSON.parse(rawValue)
+      const templated = applyTemplateToValue(parsed, idx)
+      return serializeProtobuf(input.protobuf.proto, input.protobuf.messageName, templated)
     }
     return applyTemplate(rawValue, idx)
   }

@@ -105,6 +105,9 @@ export const IPC = {
   KafkaAvroContractOpen: 'kafka:avro-contract-open',
   KafkaAvroParse: 'kafka:avro-parse',
   KafkaAvroDecode: 'kafka:avro-decode',
+  KafkaProtobufContractOpen: 'kafka:protobuf-contract-open',
+  KafkaProtobufParse: 'kafka:protobuf-parse',
+  KafkaProtobufDecode: 'kafka:protobuf-decode',
   RedisConnectionsList: 'redis:connections-list',
   RedisConnectionsSave: 'redis:connections-save',
   RedisConnectionsDelete: 'redis:connections-delete',
@@ -200,18 +203,20 @@ export interface KafkaMessageProduceInput {
   topic: string
   key: string | null
   value: string
-  format?: 'raw' | 'json' | 'thrift' | 'avro'
+  format?: 'raw' | 'json' | 'thrift' | 'avro' | 'protobuf'
   thrift?: { idl: string; structName: string; protocol?: 'binary' | 'compact' }
   avro?: { schema: string }
+  protobuf?: { proto: string; messageName: string }
 }
 
 export interface KafkaBatchProduceInput {
   topic: string
   key: string | null
   value: string
-  format?: 'raw' | 'json' | 'thrift' | 'avro'
+  format?: 'raw' | 'json' | 'thrift' | 'avro' | 'protobuf'
   thrift?: { idl: string; structName: string; protocol?: 'binary' | 'compact' }
   avro?: { schema: string }
+  protobuf?: { proto: string; messageName: string }
   count: number
   threads: number
   batchSize: number
@@ -428,6 +433,9 @@ export interface ElectronApi {
   openKafkaAvroSchema(): Promise<{ path: string; content: string } | null>
   parseAvroSchema(schema: string): Promise<boolean>
   decodeKafkaAvro(valueBase64: string, schema: string): Promise<unknown>
+  openKafkaProtobufContract(): Promise<{ path: string; content: string } | null>
+  parseProtobufProto(proto: string): Promise<string[]>
+  decodeKafkaProtobuf(valueBase64: string, proto: string, messageName: string): Promise<unknown>
   listRedisConnections(): Promise<StoredRedisConnection[]>
   saveRedisConnection(input: RedisConnectionInput): Promise<StoredRedisConnection>
   deleteRedisConnection(id: string): Promise<void>

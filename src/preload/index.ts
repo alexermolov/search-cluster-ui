@@ -130,6 +130,11 @@ const api: ElectronApi = {
   parseAvroSchema: (schema) => ipcRenderer.invoke(IPC.KafkaAvroParse, schema),
   decodeKafkaAvro: (valueBase64, schema) =>
     ipcRenderer.invoke(IPC.KafkaAvroDecode, valueBase64, schema),
+  openKafkaProtobufContract: () =>
+    ipcRenderer.invoke(IPC.KafkaProtobufContractOpen),
+  parseProtobufProto: (proto) => ipcRenderer.invoke(IPC.KafkaProtobufParse, proto),
+  decodeKafkaProtobuf: (valueBase64, proto, messageName) =>
+    ipcRenderer.invoke(IPC.KafkaProtobufDecode, valueBase64, proto, messageName),
   listRedisConnections: () => ipcRenderer.invoke(IPC.RedisConnectionsList),
   saveRedisConnection: (input) => ipcRenderer.invoke(IPC.RedisConnectionsSave, input),
   deleteRedisConnection: (id) => ipcRenderer.invoke(IPC.RedisConnectionsDelete, id),

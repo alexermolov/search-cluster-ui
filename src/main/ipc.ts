@@ -52,6 +52,7 @@ import {
   parseThriftIDL,
 } from './thrift'
 import { decodeAvro, parseAvroSchema } from './avro'
+import { decodeProtobuf, parseProtobufProto } from './protobuf'
 import {
   deleteRedisKey,
   dropRedisClient,
@@ -265,6 +266,30 @@ export function registerIpcHandlers(
       throw new Error('Invalid encoded Avro message')
     }
     return decodeAvro(schema, Buffer.from(valueBase64, 'base64'))
+  })
+  ipcMain.handle(IPC.KafkaProtobufContractOpen, async () => {
+    const { canceled, filePaths } = await dialog.showOpenDialog({
+      properties: ['openFile'],
+      filters: [{ name: 'Protobuf contracts', extensions: ['proto'] }],
+    })
+    if (canceled || !filePaths[0]) return null
+    return {
+      path: filePaths[0],
+      content: await fs.readFile(filePaths[0], 'utf8'),
+    }
+  })
+  ipcMain.handle(IPC.KafkaProtobufParse, (_e, proto: string) => {
+    const res = parseProtobufProto(proto)
+    if (res.error) throw new Error(res.error)
+    return res.names
+  })
+  ipcMain.handle(IPC.KafkaProtobufDecode, (_e, valueBase64: string, proto: string, messageName: string) => {
+    if (
+      !/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/.test(valueBase64)
+    ) {
+      throw new Error('Invalid encoded Protobuf message')
+    }
+    return decodeProtobuf(proto, messageName, Buffer.from(valueBase64, 'base64'))
   })
 
   ipcMain.handle(IPC.RedisConnectionsList, () => redisStore.list())

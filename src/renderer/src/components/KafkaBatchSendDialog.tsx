@@ -1,5 +1,5 @@
 import { useState } from "react";
-import type { AvroProfile, ThriftProfile } from "../../../shared/types";
+import type { AvroProfile, ProtobufProfile, ThriftProfile } from "../../../shared/types";
 import type { KafkaBatchProduceInput } from "../../../shared/ipc";
 import { errorMessage } from "../api";
 import { JsonEditor } from "./JsonEditor";
@@ -7,10 +7,11 @@ import { BatchSendHelpDialog } from "./BatchSendHelpDialog";
 
 export type KafkaBatchProduceDraft = {
   key: string;
-  format: "raw" | "json" | "thrift" | "avro";
+  format: "raw" | "json" | "thrift" | "avro" | "protobuf";
   value: string;
   thriftProfileId: string;
   avroProfileId: string;
+  protobufProfileId: string;
   count: number;
   threads: number;
   batchSize: number;
@@ -21,6 +22,7 @@ interface Props {
   draft: KafkaBatchProduceDraft;
   profiles: ThriftProfile[];
   avroProfiles: AvroProfile[];
+  protobufProfiles: ProtobufProfile[];
   onDraftChange: (patch: Partial<KafkaBatchProduceDraft>) => void;
   onClose: () => void;
   onSend: (
@@ -35,6 +37,7 @@ export function KafkaBatchSendDialog({
   draft,
   profiles,
   avroProfiles,
+  protobufProfiles,
   onDraftChange,
   onClose,
   onSend,
@@ -65,7 +68,8 @@ export function KafkaBatchSendDialog({
     if (
       draft.format === "json" ||
       draft.format === "thrift" ||
-      draft.format === "avro"
+      draft.format === "avro" ||
+      draft.format === "protobuf"
     ) {
       try {
         JSON.parse(draft.value);
@@ -98,6 +102,18 @@ export function KafkaBatchSendDialog({
         return;
       }
     }
+    let protobufProfile: ProtobufProfile | undefined;
+    if (draft.format === "protobuf") {
+      if (!draft.protobufProfileId) {
+        setError("Please select a Protobuf profile");
+        return;
+      }
+      protobufProfile = protobufProfiles.find((p) => p.id === draft.protobufProfileId);
+      if (!protobufProfile) {
+        setError("Selected Protobuf profile not found");
+        return;
+      }
+    }
     setSending(true);
     setError(null);
     setResult(null);
@@ -118,6 +134,10 @@ export function KafkaBatchSendDialog({
         avro:
           draft.format === "avro" && avroProfile
             ? { schema: avroProfile.schema }
+            : undefined,
+        protobuf:
+          draft.format === "protobuf" && protobufProfile
+            ? { proto: protobufProfile.proto, messageName: protobufProfile.messageName }
             : undefined,
         count: draft.count,
         threads: draft.threads,
@@ -175,6 +195,7 @@ export function KafkaBatchSendDialog({
               <option value="raw">Raw string</option>
               <option value="thrift">Thrift</option>
               <option value="avro">Avro</option>
+              <option value="protobuf">Protobuf</option>
             </select>
           </label>
         </div>
@@ -289,6 +310,43 @@ export function KafkaBatchSendDialog({
                 onChange={(value) => onDraftChange({ value })}
                 onRun={() => void submit()}
                 placeholder="Enter JSON matching the Avro schema. Supports ${i}, ${uuid}, ${randName()}, etc."
+                minHeight="120px"
+              />
+            </div>
+          </>
+        )}
+
+        {draft.format === "protobuf" && (
+          <>
+            <label className="field">
+              <span>Protobuf profile</span>
+              <select
+                className="input"
+                value={draft.protobufProfileId}
+                onChange={(e) =>
+                  onDraftChange({ protobufProfileId: e.target.value })
+                }
+              >
+                <option value="">— Select profile —</option>
+                {protobufProfiles.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.name}
+                  </option>
+                ))}
+              </select>
+              {protobufProfiles.length === 0 && (
+                <span className="muted">
+                  Create a profile in the decode toolbar first
+                </span>
+              )}
+            </label>
+            <div className="field">
+              <span>JSON payload (will be serialized to Protobuf binary)</span>
+              <JsonEditor
+                value={draft.value}
+                onChange={(value) => onDraftChange({ value })}
+                onRun={() => void submit()}
+                placeholder="Enter JSON matching the Protobuf message. Supports ${i}, ${uuid}, ${randName()}, etc."
                 minHeight="120px"
               />
             </div>

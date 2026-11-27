@@ -440,3 +440,10 @@ export interface AvroProfile {
   name: string
   schema: string
 }
+
+export interface ProtobufProfile {
+  id: string
+  name: string
+  proto: string
+  messageName: string
+}
