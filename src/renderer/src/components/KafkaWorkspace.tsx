@@ -609,11 +609,18 @@ function KafkaProduceDialog({
             <select
               className="input"
               value={draft.format}
-              onChange={(event) =>
-                onDraftChange({
-                  format: event.target.value as KafkaProduceDraft["format"],
-                })
-              }
+              onChange={(event) => {
+                const format = event.target.value as KafkaProduceDraft["format"];
+                const wasJsonLike = draft.format === "json" || draft.format === "thrift" || draft.format === "avro" || draft.format === "protobuf";
+                const isBinaryLike = format === "base64" || format === "hex";
+                const isJsonLike = format === "json" || format === "thrift" || format === "avro" || format === "protobuf";
+                const wasBinaryLike = draft.format === "base64" || draft.format === "hex";
+                if ((wasJsonLike && isBinaryLike) || (wasBinaryLike && isJsonLike)) {
+                  onDraftChange({ format, value: "" });
+                } else {
+                  onDraftChange({ format });
+                }
+              }}
             >
               <option value="json">JSON</option>
               <option value="raw">Raw string</option>
@@ -996,7 +1003,12 @@ function KafkaMessageAccordion({
         ) : displayMode === "text" ? (
           <KafkaJsonViewer value={displayValue} />
         ) : (
-          <pre style={{ whiteSpace: "pre-wrap", wordBreak: "break-all" }}>{displayValue}</pre>
+          <pre
+            className="mono"
+            style={{ whiteSpace: "pre-wrap", wordBreak: "break-all", background: "var(--bg-elevated)", borderRadius: "3px", padding: "6px 8px" }}
+          >
+            {displayValue}
+          </pre>
         )}
         {Object.keys(message.headers).length > 0 && (
           <details>

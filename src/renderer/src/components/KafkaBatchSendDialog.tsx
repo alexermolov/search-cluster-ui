@@ -213,11 +213,18 @@ export function KafkaBatchSendDialog({
             <select
               className="input"
               value={draft.format}
-              onChange={(e) =>
-                onDraftChange({
-                  format: e.target.value as KafkaBatchProduceDraft["format"],
-                })
-              }
+              onChange={(e) => {
+                const format = e.target.value as KafkaBatchProduceDraft["format"];
+                const wasJsonLike = draft.format === "json" || draft.format === "thrift" || draft.format === "avro" || draft.format === "protobuf";
+                const isBinaryLike = format === "base64" || format === "hex";
+                const isJsonLike = format === "json" || format === "thrift" || format === "avro" || format === "protobuf";
+                const wasBinaryLike = draft.format === "base64" || draft.format === "hex";
+                if ((wasJsonLike && isBinaryLike) || (wasBinaryLike && isJsonLike)) {
+                  onDraftChange({ format, value: "" });
+                } else {
+                  onDraftChange({ format });
+                }
+              }}
             >
               <option value="json">JSON</option>
               <option value="raw">Raw string</option>
