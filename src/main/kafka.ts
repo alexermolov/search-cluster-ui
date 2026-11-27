@@ -23,6 +23,7 @@ import type {
   KafkaTopicCreateInput,
 } from '../shared/ipc'
 import { applyTemplate, applyTemplateToValue } from './batchTemplate'
+import { serializeAvro } from './avro'
 import type {
   KafkaAuthConfig,
   KafkaConnectionInput,
@@ -513,8 +514,9 @@ export async function fetchKafkaConsumerGroups(
 
 async function buildMessageValue(
   value: string,
-  format?: 'raw' | 'json' | 'thrift',
+  format?: 'raw' | 'json' | 'thrift' | 'avro',
   thrift?: { idl: string; structName: string; protocol?: 'binary' | 'compact' },
+  avro?: { schema: string },
 ): Promise<string | Buffer> {
   if (format === 'thrift') {
     if (!thrift?.idl.trim()) throw new Error('Thrift IDL is required')
@@ -541,18 +543,33 @@ async function buildMessageValue(
       throw new Error(`Thrift serialization failed: ${msg}`)
     }
   }
+  if (format === 'avro') {
+    if (!avro?.schema.trim()) throw new Error('Avro schema is required')
+    let data: unknown
+    try {
+      data = JSON.parse(value)
+    } catch {
+      throw new Error('Message value must be valid JSON for Avro serialization')
+    }
+    try {
+      return serializeAvro(avro.schema, data)
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e)
+      throw new Error(`Avro serialization failed: ${msg}`)
+    }
+  }
   return value
 }
 
 export async function produceKafkaMessage(
   cache: KafkaClientCache,
   config: KafkaConnection,
-  { topic, key, value, format, thrift }: KafkaMessageProduceInput,
+  { topic, key, value, format, thrift, avro }: KafkaMessageProduceInput,
 ): Promise<void> {
   if (!topic.trim()) throw new Error('A Kafka topic is required')
   if (!value) throw new Error('A message value is required')
 
-  const messageValue = await buildMessageValue(value, format, thrift)
+  const messageValue = await buildMessageValue(value, format, thrift, avro)
 
   const client = cache.get(config)
   await client.send({
@@ -582,7 +599,7 @@ export async function produceKafkaBatch(
 
   let cachedValue: string | Buffer | undefined
   if (!hasVariable) {
-    cachedValue = await buildMessageValue(input.value, input.format, input.thrift)
+    cachedValue = await buildMessageValue(input.value, input.format, input.thrift, input.avro)
   }
 
   const encode = (rawValue: string, idx: number): string | Buffer => {
@@ -598,6 +615,11 @@ export async function produceKafkaBatch(
       return input.thrift.protocol === 'compact'
         ? serializeThriftCompact(thriftAst, input.thrift.structName, templated)
         : serializeThriftBinary(thriftAst, input.thrift.structName, templated)
+    }
+    if (input.format === 'avro' && input.avro) {
+      const parsed = JSON.parse(rawValue)
+      const templated = applyTemplateToValue(parsed, idx)
+      return serializeAvro(input.avro.schema, templated)
     }
     return applyTemplate(rawValue, idx)
   }

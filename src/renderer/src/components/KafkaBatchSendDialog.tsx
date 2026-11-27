@@ -1,5 +1,5 @@
 import { useState } from "react";
-import type { ThriftProfile } from "../../../shared/types";
+import type { AvroProfile, ThriftProfile } from "../../../shared/types";
 import type { KafkaBatchProduceInput } from "../../../shared/ipc";
 import { errorMessage } from "../api";
 import { JsonEditor } from "./JsonEditor";
@@ -7,9 +7,10 @@ import { BatchSendHelpDialog } from "./BatchSendHelpDialog";
 
 export type KafkaBatchProduceDraft = {
   key: string;
-  format: "raw" | "json" | "thrift";
+  format: "raw" | "json" | "thrift" | "avro";
   value: string;
   thriftProfileId: string;
+  avroProfileId: string;
   count: number;
   threads: number;
   batchSize: number;
@@ -19,6 +20,7 @@ interface Props {
   topic: string;
   draft: KafkaBatchProduceDraft;
   profiles: ThriftProfile[];
+  avroProfiles: AvroProfile[];
   onDraftChange: (patch: Partial<KafkaBatchProduceDraft>) => void;
   onClose: () => void;
   onSend: (
@@ -32,6 +34,7 @@ export function KafkaBatchSendDialog({
   topic,
   draft,
   profiles,
+  avroProfiles,
   onDraftChange,
   onClose,
   onSend,
@@ -59,7 +62,11 @@ export function KafkaBatchSendDialog({
       setError("Batch size must be greater than 0");
       return;
     }
-    if (draft.format === "json" || draft.format === "thrift") {
+    if (
+      draft.format === "json" ||
+      draft.format === "thrift" ||
+      draft.format === "avro"
+    ) {
       try {
         JSON.parse(draft.value);
       } catch {
@@ -79,6 +86,18 @@ export function KafkaBatchSendDialog({
         return;
       }
     }
+    let avroProfile: AvroProfile | undefined;
+    if (draft.format === "avro") {
+      if (!draft.avroProfileId) {
+        setError("Please select an Avro profile");
+        return;
+      }
+      avroProfile = avroProfiles.find((p) => p.id === draft.avroProfileId);
+      if (!avroProfile) {
+        setError("Selected Avro profile not found");
+        return;
+      }
+    }
     setSending(true);
     setError(null);
     setResult(null);
@@ -95,6 +114,10 @@ export function KafkaBatchSendDialog({
                 structName: profile.structName,
                 protocol: profile.protocol,
               }
+            : undefined,
+        avro:
+          draft.format === "avro" && avroProfile
+            ? { schema: avroProfile.schema }
             : undefined,
         count: draft.count,
         threads: draft.threads,
@@ -151,6 +174,7 @@ export function KafkaBatchSendDialog({
               <option value="json">JSON</option>
               <option value="raw">Raw string</option>
               <option value="thrift">Thrift</option>
+              <option value="avro">Avro</option>
             </select>
           </label>
         </div>
@@ -228,6 +252,43 @@ export function KafkaBatchSendDialog({
                 onChange={(value) => onDraftChange({ value })}
                 onRun={() => void submit()}
                 placeholder="Enter JSON matching the Thrift struct. Supports ${i}, ${uuid}, ${randName()}, etc."
+                minHeight="120px"
+              />
+            </div>
+          </>
+        )}
+
+        {draft.format === "avro" && (
+          <>
+            <label className="field">
+              <span>Avro profile</span>
+              <select
+                className="input"
+                value={draft.avroProfileId}
+                onChange={(e) =>
+                  onDraftChange({ avroProfileId: e.target.value })
+                }
+              >
+                <option value="">— Select profile —</option>
+                {avroProfiles.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.name}
+                  </option>
+                ))}
+              </select>
+              {avroProfiles.length === 0 && (
+                <span className="muted">
+                  Create a profile in the decode toolbar first
+                </span>
+              )}
+            </label>
+            <div className="field">
+              <span>JSON payload (will be serialized to Avro binary)</span>
+              <JsonEditor
+                value={draft.value}
+                onChange={(value) => onDraftChange({ value })}
+                onRun={() => void submit()}
+                placeholder="Enter JSON matching the Avro schema. Supports ${i}, ${uuid}, ${randName()}, etc."
                 minHeight="120px"
               />
             </div>

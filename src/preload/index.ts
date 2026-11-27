@@ -125,6 +125,11 @@ const api: ElectronApi = {
   parseThriftIDL: (idl) => ipcRenderer.invoke(IPC.KafkaThriftParse, idl),
   decodeKafkaThrift: (valueBase64, idl, structName, protocol) =>
     ipcRenderer.invoke(IPC.KafkaThriftDecode, valueBase64, idl, structName, protocol),
+  openKafkaAvroSchema: () =>
+    ipcRenderer.invoke(IPC.KafkaAvroContractOpen),
+  parseAvroSchema: (schema) => ipcRenderer.invoke(IPC.KafkaAvroParse, schema),
+  decodeKafkaAvro: (valueBase64, schema) =>
+    ipcRenderer.invoke(IPC.KafkaAvroDecode, valueBase64, schema),
   listRedisConnections: () => ipcRenderer.invoke(IPC.RedisConnectionsList),
   saveRedisConnection: (input) => ipcRenderer.invoke(IPC.RedisConnectionsSave, input),
   deleteRedisConnection: (id) => ipcRenderer.invoke(IPC.RedisConnectionsDelete, id),

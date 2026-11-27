@@ -51,6 +51,7 @@ import {
   getThriftStructNames,
   parseThriftIDL,
 } from './thrift'
+import { decodeAvro, parseAvroSchema } from './avro'
 import {
   deleteRedisKey,
   dropRedisClient,
@@ -241,6 +242,30 @@ export function registerIpcHandlers(
         : decodeThriftBinary(ast, structName, buffer)
     },
   )
+  ipcMain.handle(IPC.KafkaAvroContractOpen, async () => {
+    const { canceled, filePaths } = await dialog.showOpenDialog({
+      properties: ['openFile'],
+      filters: [{ name: 'Avro schemas', extensions: ['avsc', 'json'] }],
+    })
+    if (canceled || !filePaths[0]) return null
+    return {
+      path: filePaths[0],
+      content: await fs.readFile(filePaths[0], 'utf8'),
+    }
+  })
+  ipcMain.handle(IPC.KafkaAvroParse, (_e, schema: string) => {
+    const res = parseAvroSchema(schema)
+    if (!res.valid) throw new Error(res.error ?? 'Invalid Avro schema')
+    return true
+  })
+  ipcMain.handle(IPC.KafkaAvroDecode, (_e, valueBase64: string, schema: string) => {
+    if (
+      !/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/.test(valueBase64)
+    ) {
+      throw new Error('Invalid encoded Avro message')
+    }
+    return decodeAvro(schema, Buffer.from(valueBase64, 'base64'))
+  })
 
   ipcMain.handle(IPC.RedisConnectionsList, () => redisStore.list())
   ipcMain.handle(IPC.RedisConnectionsSave, (_e, input: RedisConnectionInput) => {

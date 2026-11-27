@@ -10,6 +10,7 @@ import type {
   KafkaPartitionInfo,
   KafkaConsumerGroupInfo,
   ThriftProfile,
+  AvroProfile,
 } from "../../../shared/types";
 import type {
   KafkaBatchProduceInput,
@@ -25,6 +26,7 @@ import { readLastActiveId, writeLastActiveId } from "../lastActiveId";
 import { shareConnection, decodeFromBase64 } from "../share";
 import { ImportDialog } from "./ImportDialog";
 import { KafkaThriftProfilesDialog } from "./KafkaThriftProfilesDialog";
+import { KafkaAvroProfilesDialog } from "./KafkaAvroProfilesDialog";
 import {
   KafkaBatchSendDialog,
   type KafkaBatchProduceDraft,
@@ -433,9 +435,10 @@ function KafkaTopicCreateDialog({
 
 type KafkaProduceDraft = {
   key: string;
-  format: "raw" | "json" | "thrift";
+  format: "raw" | "json" | "thrift" | "avro";
   value: string;
   thriftProfileId: string;
+  avroProfileId: string;
 };
 
 const EMPTY_KAFKA_PRODUCE_DRAFT: KafkaProduceDraft = {
@@ -443,12 +446,14 @@ const EMPTY_KAFKA_PRODUCE_DRAFT: KafkaProduceDraft = {
   format: "json",
   value: "{\n  \n}",
   thriftProfileId: "",
+  avroProfileId: "",
 };
 
 function KafkaProduceDialog({
   topic,
   draft,
   profiles,
+  avroProfiles,
   onDraftChange,
   onClose,
   onSend,
@@ -456,6 +461,7 @@ function KafkaProduceDialog({
   topic: string;
   draft: KafkaProduceDraft;
   profiles: ThriftProfile[];
+  avroProfiles: AvroProfile[];
   onDraftChange: (patch: Partial<KafkaProduceDraft>) => void;
   onClose: () => void;
   onSend: (input: KafkaMessageProduceInput) => Promise<void>;
@@ -464,7 +470,11 @@ function KafkaProduceDialog({
   const [error, setError] = useState<string | null>(null);
 
   async function submit(): Promise<void> {
-    if (draft.format === "json" || draft.format === "thrift") {
+    if (
+      draft.format === "json" ||
+      draft.format === "thrift" ||
+      draft.format === "avro"
+    ) {
       try {
         JSON.parse(draft.value);
       } catch {
@@ -484,6 +494,18 @@ function KafkaProduceDialog({
         return;
       }
     }
+    let avroProfile: AvroProfile | undefined;
+    if (draft.format === "avro") {
+      if (!draft.avroProfileId) {
+        setError("Please select an Avro profile");
+        return;
+      }
+      avroProfile = avroProfiles.find((p) => p.id === draft.avroProfileId);
+      if (!avroProfile) {
+        setError("Selected Avro profile not found");
+        return;
+      }
+    }
     setSending(true);
     setError(null);
     try {
@@ -499,6 +521,10 @@ function KafkaProduceDialog({
                 structName: profile.structName,
                 protocol: profile.protocol,
               }
+            : undefined,
+        avro:
+          draft.format === "avro" && avroProfile
+            ? { schema: avroProfile.schema }
             : undefined,
       });
       onClose();
@@ -541,6 +567,7 @@ function KafkaProduceDialog({
               <option value="json">JSON</option>
               <option value="raw">Raw string</option>
               <option value="thrift">Thrift</option>
+              <option value="avro">Avro</option>
             </select>
           </label>
         </div>
@@ -623,6 +650,45 @@ function KafkaProduceDialog({
                   onChange={(value) => onDraftChange({ value })}
                   onRun={() => void submit()}
                   placeholder="Enter JSON matching the Thrift struct"
+                  minHeight="120px"
+                />
+              </div>
+            </div>
+          </>
+        )}
+
+        {draft.format === "avro" && (
+          <>
+            <label className="field">
+              <span>Avro profile</span>
+              <select
+                className="input"
+                value={draft.avroProfileId}
+                onChange={(event) =>
+                  onDraftChange({ avroProfileId: event.target.value })
+                }
+              >
+                <option value="">— Select profile —</option>
+                {avroProfiles.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.name}
+                  </option>
+                ))}
+              </select>
+              {avroProfiles.length === 0 && (
+                <span className="muted">
+                  Create a profile in the decode toolbar first
+                </span>
+              )}
+            </label>
+            <div className="field">
+              <span>JSON payload (will be serialized to Avro binary)</span>
+              <div className="kafka-produce-editor">
+                <JsonEditor
+                  value={draft.value}
+                  onChange={(value) => onDraftChange({ value })}
+                  onRun={() => void submit()}
+                  placeholder="Enter JSON matching the Avro schema"
                   minHeight="120px"
                 />
               </div>
@@ -962,7 +1028,16 @@ export function KafkaWorkspace({ onClose }: { onClose: () => void }) {
       return [];
     }
   });
+  const [avroProfiles, setAvroProfiles] = useState<AvroProfile[]>(() => {
+    try {
+      const raw = localStorage.getItem("kafka-avro-profiles");
+      return raw ? (JSON.parse(raw) as AvroProfile[]) : [];
+    } catch {
+      return [];
+    }
+  });
   const [profilesOpen, setProfilesOpen] = useState(false);
+  const [avroProfilesOpen, setAvroProfilesOpen] = useState(false);
   const [selectedProfileId, setSelectedProfileId] = useState<string>(() => {
     try {
       return localStorage.getItem("kafka-thrift-selected-profile-id") || "";
@@ -1449,9 +1524,13 @@ export function KafkaWorkspace({ onClose }: { onClose: () => void }) {
     [profiles, selectedProfileId],
   );
 
+
   useEffect(() => {
     localStorage.setItem("kafka-thrift-profiles", JSON.stringify(profiles));
   }, [profiles]);
+  useEffect(() => {
+    localStorage.setItem("kafka-avro-profiles", JSON.stringify(avroProfiles));
+  }, [avroProfiles]);
 
   useEffect(() => {
     localStorage.setItem("kafka-thrift-selected-profile-id", selectedProfileId);
@@ -2105,7 +2184,13 @@ export function KafkaWorkspace({ onClose }: { onClose: () => void }) {
                         className="btn"
                         onClick={() => setProfilesOpen(true)}
                       >
-                        Decode profiles
+                        Thrift profiles
+                      </button>
+                      <button
+                        className="btn"
+                        onClick={() => setAvroProfilesOpen(true)}
+                      >
+                        Avro profiles
                       </button>
                       <select
                         className="input kafka-profile-select"
@@ -2231,6 +2316,7 @@ export function KafkaWorkspace({ onClose }: { onClose: () => void }) {
           topic={selectedTopic}
           draft={produceDraft}
           profiles={profiles}
+          avroProfiles={avroProfiles}
           onDraftChange={updateProduceDraft}
           onClose={() => setProducing(false)}
           onSend={produceMessage}
@@ -2241,6 +2327,7 @@ export function KafkaWorkspace({ onClose }: { onClose: () => void }) {
           topic={selectedTopic}
           draft={batchDraft}
           profiles={profiles}
+          avroProfiles={avroProfiles}
           onDraftChange={updateBatchProduceDraft}
           onClose={() => setBatchProducing(false)}
           onSend={produceBatch}
@@ -2251,6 +2338,13 @@ export function KafkaWorkspace({ onClose }: { onClose: () => void }) {
           profiles={profiles}
           onChange={setProfiles}
           onClose={() => setProfilesOpen(false)}
+        />
+      )}
+      {avroProfilesOpen && (
+        <KafkaAvroProfilesDialog
+          profiles={avroProfiles}
+          onChange={setAvroProfiles}
+          onClose={() => setAvroProfilesOpen(false)}
         />
       )}
       {detailTopic && (

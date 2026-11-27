@@ -434,3 +434,9 @@ export interface ThriftProfile {
   structName: string
   protocol?: 'binary' | 'compact'
 }
+
+export interface AvroProfile {
+  id: string
+  name: string
+  schema: string
+}
