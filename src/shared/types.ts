@@ -36,6 +36,8 @@ export interface KafkaTopicInfo {
   partitions: number
 }
 
+export type KafkaDisplayMode = 'text' | 'base64' | 'hex'
+
 export interface KafkaMessage {
   topic: string
   partition: number
@@ -44,6 +46,7 @@ export interface KafkaMessage {
   key: string | null
   value: string | null
   valueBase64: string | null
+  valueHex: string | null
   headers: Record<string, string | null>
 }
 

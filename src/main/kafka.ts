@@ -515,11 +515,30 @@ export async function fetchKafkaConsumerGroups(
 
 async function buildMessageValue(
   value: string,
-  format?: 'raw' | 'json' | 'thrift' | 'avro' | 'protobuf',
+  format?: 'raw' | 'json' | 'base64' | 'hex' | 'thrift' | 'avro' | 'protobuf',
   thrift?: { idl: string; structName: string; protocol?: 'binary' | 'compact' },
   avro?: { schema: string },
   protobuf?: { proto: string; messageName: string },
 ): Promise<string | Buffer> {
+  if (format === 'base64') {
+    if (!value.trim()) throw new Error('Message value is required')
+    try {
+      return Buffer.from(value.trim(), 'base64')
+    } catch {
+      throw new Error('Message value must be valid Base64')
+    }
+  }
+  if (format === 'hex') {
+    if (!value.trim()) throw new Error('Message value is required')
+    const hex = value.trim().replace(/\s+/g, '')
+    if (hex.length % 2 !== 0) throw new Error('Hex value must have an even number of digits')
+    if (!/^[0-9a-fA-F]+$/.test(hex)) throw new Error('Message value must be valid hex')
+    try {
+      return Buffer.from(hex, 'hex')
+    } catch {
+      throw new Error('Message value must be valid hex')
+    }
+  }
   if (format === 'thrift') {
     if (!thrift?.idl.trim()) throw new Error('Thrift IDL is required')
     if (!thrift.structName) throw new Error('Thrift struct name is required')
@@ -707,6 +726,7 @@ function toKafkaMessage({
       ? value.map((item) => item.toString('utf8')).join(', ')
       : value?.toString('utf8') ?? null
   }
+  const valueBuf = message.value ?? null
   return {
     topic,
     partition,
@@ -714,7 +734,8 @@ function toKafkaMessage({
     timestamp: message.timestamp || null,
     key: decode(message.key),
     value: decode(message.value),
-    valueBase64: message.value?.toString('base64') ?? null,
+    valueBase64: valueBuf?.toString('base64') ?? null,
+    valueHex: valueBuf?.toString('hex') ?? null,
     headers,
   }
 }

@@ -7,7 +7,7 @@ import { BatchSendHelpDialog } from "./BatchSendHelpDialog";
 
 export type KafkaBatchProduceDraft = {
   key: string;
-  format: "raw" | "json" | "thrift" | "avro" | "protobuf";
+  format: "raw" | "json" | "base64" | "hex" | "thrift" | "avro" | "protobuf";
   value: string;
   thriftProfileId: string;
   avroProfileId: string;
@@ -75,6 +75,34 @@ export function KafkaBatchSendDialog({
         JSON.parse(draft.value);
       } catch {
         setError("Message value must be valid JSON");
+        return;
+      }
+    }
+    if (draft.format === "base64") {
+      const b = draft.value.trim();
+      if (!b) {
+        setError("Message value is required");
+        return;
+      }
+      try {
+        atob(b.replace(/\s/g, ""));
+      } catch {
+        setError("Message value must be valid Base64");
+        return;
+      }
+    }
+    if (draft.format === "hex") {
+      if (!draft.value.trim()) {
+        setError("Message value is required");
+        return;
+      }
+      const hex = draft.value.trim().replace(/\s+/g, "");
+      if (hex.length % 2 !== 0) {
+        setError("Hex value must have an even number of digits");
+        return;
+      }
+      if (!/^[0-9a-fA-F]+$/.test(hex)) {
+        setError("Message value must be valid hex");
         return;
       }
     }
@@ -193,6 +221,8 @@ export function KafkaBatchSendDialog({
             >
               <option value="json">JSON</option>
               <option value="raw">Raw string</option>
+              <option value="base64">Base64</option>
+              <option value="hex">Hex</option>
               <option value="thrift">Thrift</option>
               <option value="avro">Avro</option>
               <option value="protobuf">Protobuf</option>
@@ -209,6 +239,34 @@ export function KafkaBatchSendDialog({
               onChange={(e) => onDraftChange({ value: e.target.value })}
               rows={6}
               placeholder="Free-form text. Use ${i}, ${uuid}, ${randString(10)}, ${nowIso}, etc."
+              style={{ minHeight: "120px", fontFamily: "monospace" }}
+            />
+          </label>
+        )}
+
+        {draft.format === "base64" && (
+          <label className="field">
+            <span>Base64 value</span>
+            <textarea
+              className="input mono"
+              value={draft.value}
+              onChange={(e) => onDraftChange({ value: e.target.value })}
+              rows={6}
+              placeholder="aGVsbG8="
+              style={{ minHeight: "120px", fontFamily: "monospace" }}
+            />
+          </label>
+        )}
+
+        {draft.format === "hex" && (
+          <label className="field">
+            <span>Hex value</span>
+            <textarea
+              className="input mono"
+              value={draft.value}
+              onChange={(e) => onDraftChange({ value: e.target.value })}
+              rows={6}
+              placeholder="68 65 6c 6c 6f"
               style={{ minHeight: "120px", fontFamily: "monospace" }}
             />
           </label>

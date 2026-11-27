@@ -203,7 +203,7 @@ export interface KafkaMessageProduceInput {
   topic: string
   key: string | null
   value: string
-  format?: 'raw' | 'json' | 'thrift' | 'avro' | 'protobuf'
+  format?: 'raw' | 'json' | 'base64' | 'hex' | 'thrift' | 'avro' | 'protobuf'
   thrift?: { idl: string; structName: string; protocol?: 'binary' | 'compact' }
   avro?: { schema: string }
   protobuf?: { proto: string; messageName: string }
@@ -213,7 +213,7 @@ export interface KafkaBatchProduceInput {
   topic: string
   key: string | null
   value: string
-  format?: 'raw' | 'json' | 'thrift' | 'avro' | 'protobuf'
+  format?: 'raw' | 'json' | 'base64' | 'hex' | 'thrift' | 'avro' | 'protobuf'
   thrift?: { idl: string; structName: string; protocol?: 'binary' | 'compact' }
   avro?: { schema: string }
   protobuf?: { proto: string; messageName: string }

@@ -437,7 +437,7 @@ function KafkaTopicCreateDialog({
 
 type KafkaProduceDraft = {
   key: string;
-  format: "raw" | "json" | "thrift" | "avro" | "protobuf";
+  format: "raw" | "json" | "base64" | "hex" | "thrift" | "avro" | "protobuf";
   value: string;
   thriftProfileId: string;
   avroProfileId: string;
@@ -486,6 +486,34 @@ function KafkaProduceDialog({
         JSON.parse(draft.value);
       } catch {
         setError("Message value must be valid JSON");
+        return;
+      }
+    }
+    if (draft.format === "base64") {
+      const b = draft.value.trim();
+      if (!b) {
+        setError("Message value is required");
+        return;
+      }
+      try {
+        atob(b.replace(/\s/g, ""));
+      } catch {
+        setError("Message value must be valid Base64");
+        return;
+      }
+    }
+    if (draft.format === "hex") {
+      if (!draft.value.trim()) {
+        setError("Message value is required");
+        return;
+      }
+      const hex = draft.value.trim().replace(/\s+/g, "");
+      if (hex.length % 2 !== 0) {
+        setError("Hex value must have an even number of digits");
+        return;
+      }
+      if (!/^[0-9a-fA-F]+$/.test(hex)) {
+        setError("Message value must be valid hex");
         return;
       }
     }
@@ -589,6 +617,8 @@ function KafkaProduceDialog({
             >
               <option value="json">JSON</option>
               <option value="raw">Raw string</option>
+              <option value="base64">Base64</option>
+              <option value="hex">Hex</option>
               <option value="thrift">Thrift</option>
               <option value="avro">Avro</option>
               <option value="protobuf">Protobuf</option>
@@ -607,6 +637,38 @@ function KafkaProduceDialog({
                   onDraftChange({ value: event.target.value })
                 }
                 placeholder="Free-form text"
+              />
+            </div>
+          </label>
+        )}
+
+        {draft.format === "base64" && (
+          <label className="field">
+            <span>Base64 value</span>
+            <div className="kafka-produce-editor">
+              <textarea
+                className="input mono"
+                value={draft.value}
+                onChange={(event) =>
+                  onDraftChange({ value: event.target.value })
+                }
+                placeholder="aGVsbG8="
+              />
+            </div>
+          </label>
+        )}
+
+        {draft.format === "hex" && (
+          <label className="field">
+            <span>Hex value</span>
+            <div className="kafka-produce-editor">
+              <textarea
+                className="input mono"
+                value={draft.value}
+                onChange={(event) =>
+                  onDraftChange({ value: event.target.value })
+                }
+                placeholder="68 65 6c 6c 6f"
               />
             </div>
           </label>
@@ -807,6 +869,20 @@ function KafkaJsonViewer({ value }: { value: string }) {
   );
 }
 
+type DisplayMode = "text" | "base64" | "hex";
+
+function formatHexWithSpaces(hex: string): string {
+  return hex.replace(/(.{2})/g, "$1 ").trim();
+}
+
+function getDisplayValue(message: KafkaMessage, mode: DisplayMode): string | null {
+  if (message.value === null) return null;
+  if (mode === "text") return message.value;
+  if (mode === "base64") return message.valueBase64;
+  if (mode === "hex") return message.valueHex ? formatHexWithSpaces(message.valueHex) : null;
+  return message.value;
+}
+
 function KafkaMessageAccordion({
   message,
   thriftIdl,
@@ -823,6 +899,7 @@ function KafkaMessageAccordion({
   const [decodedJson, setDecodedJson] = useState<string | null>(null);
   const [decoding, setDecoding] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [displayMode, setDisplayMode] = useState<DisplayMode>("text");
   const detailsRef = useRef<HTMLDetailsElement>(null);
 
   useEffect(() => {
@@ -856,6 +933,8 @@ function KafkaMessageAccordion({
     }
   }
 
+  const displayValue = getDisplayValue(message, displayMode);
+
   return (
     <details className="kafka-message" ref={detailsRef}>
       <summary className="kafka-message-meta">
@@ -867,23 +946,40 @@ function KafkaMessageAccordion({
             : "No timestamp"}
         </span>
         {message.key !== null && <span>Key: {message.key}</span>}
-        <button
-          className="btn kafka-decode-toggle"
-          onClick={(event) => {
-            event.preventDefault();
-            event.stopPropagation();
-            void toggleDecode();
-          }}
-          disabled={
-            message.valueBase64 === null ||
-            !thriftIdl ||
-            !structName ||
-            loadingProfile ||
-            decoding
-          }
-        >
-          {decoding ? "Decoding…" : decodedJson !== null ? "Close decode" : "Decode"}
-        </button>
+        <div style={{ display: "flex", gap: "6px", alignItems: "center" }}>
+          <select
+            className="input input-sm"
+            value={displayMode}
+            onChange={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              setDisplayMode(e.target.value as DisplayMode);
+            }}
+            style={{ padding: "2px 6px", fontSize: "12px", width: "80px" }}
+            onMouseDown={(e) => e.stopPropagation()}
+          >
+            <option value="text">Text</option>
+            <option value="base64">Base64</option>
+            <option value="hex">Hex</option>
+          </select>
+          <button
+            className="btn kafka-decode-toggle"
+            onClick={(event) => {
+              event.preventDefault();
+              event.stopPropagation();
+              void toggleDecode();
+            }}
+            disabled={
+              message.valueBase64 === null ||
+              !thriftIdl ||
+              !structName ||
+              loadingProfile ||
+              decoding
+            }
+          >
+            {decoding ? "Decoding…" : decodedJson !== null ? "Close decode" : "Decode"}
+          </button>
+        </div>
       </summary>
       {decodedJson !== null && (
         <div className="kafka-thrift-decoded">
@@ -895,10 +991,12 @@ function KafkaMessageAccordion({
         </div>
       )}
       <div className="kafka-message-body">
-        {message.value === null ? (
+        {displayValue === null ? (
           <pre>(null value)</pre>
+        ) : displayMode === "text" ? (
+          <KafkaJsonViewer value={displayValue} />
         ) : (
-          <KafkaJsonViewer value={message.value} />
+          <pre style={{ whiteSpace: "pre-wrap", wordBreak: "break-all" }}>{displayValue}</pre>
         )}
         {Object.keys(message.headers).length > 0 && (
           <details>
