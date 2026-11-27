@@ -141,6 +141,17 @@ const api: ElectronApi = {
     ipcRenderer.invoke(IPC.RedisCommand, connectionId, command),
   fetchRedisServerInfo: (connectionId) =>
     ipcRenderer.invoke(IPC.RedisServerInfo, connectionId),
+  exportConnections: () => ipcRenderer.invoke(IPC.ConnectionsExport),
+  importConnections: () => ipcRenderer.invoke(IPC.ConnectionsImport),
+  exportKafkaConnections: () =>
+    ipcRenderer.invoke(IPC.KafkaConnectionsExport),
+  importKafkaConnections: () =>
+    ipcRenderer.invoke(IPC.KafkaConnectionsImport),
+  exportRedisConnections: () => ipcRenderer.invoke(IPC.RedisConnectionsExport),
+  importRedisConnections: () =>
+    ipcRenderer.invoke(IPC.RedisConnectionsImport),
+  exportAllConnections: () => ipcRenderer.invoke(IPC.AllConnectionsExport),
+  importAllConnections: () => ipcRenderer.invoke(IPC.AllConnectionsImport),
 }
 
 contextBridge.exposeInMainWorld('api', api)

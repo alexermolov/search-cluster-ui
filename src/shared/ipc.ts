@@ -112,6 +112,14 @@ export const IPC = {
   RedisKeyDelete: 'redis:key-delete',
   RedisCommand: 'redis:command',
   RedisServerInfo: 'redis:server-info',
+  ConnectionsExport: 'connections:export',
+  ConnectionsImport: 'connections:import',
+  KafkaConnectionsExport: 'kafka:connections-export',
+  KafkaConnectionsImport: 'kafka:connections-import',
+  RedisConnectionsExport: 'redis:connections-export',
+  RedisConnectionsImport: 'redis:connections-import',
+  AllConnectionsExport: 'connections:all-export',
+  AllConnectionsImport: 'connections:all-import',
 } as const
 
 /** Payload shape for creating or updating a connection. */
@@ -422,6 +430,18 @@ export interface ElectronApi {
   deleteRedisKey(connectionId: string, key: string): Promise<void>
   runRedisCommand(connectionId: string, command: string): Promise<unknown>
   fetchRedisServerInfo(connectionId: string): Promise<RedisServerInfo>
+  exportConnections(): Promise<string | null>
+  importConnections(): Promise<StoredConnection[]>
+  exportKafkaConnections(): Promise<string | null>
+  importKafkaConnections(): Promise<StoredKafkaConnection[]>
+  exportRedisConnections(): Promise<string | null>
+  importRedisConnections(): Promise<StoredRedisConnection[]>
+  exportAllConnections(): Promise<string | null>
+  importAllConnections(): Promise<{
+    elastic: StoredConnection[]
+    kafka: StoredKafkaConnection[]
+    redis: StoredRedisConnection[]
+  }>
 }
 
 declare global {

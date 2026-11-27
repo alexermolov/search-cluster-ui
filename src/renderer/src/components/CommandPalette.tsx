@@ -5,6 +5,8 @@ import type {
   StoredRedisConnection,
 } from "../../../shared/types";
 import { AUTO_REFRESH_OPTIONS, useApp, type Tab } from "../store";
+import { api } from "../api";
+import { addToast } from "../toasts";
 
 export interface Command {
   id: string;
@@ -167,6 +169,43 @@ export function useElasticPaletteCommands(): Command[] {
         hint: "Connection",
         run: () => openEditor(),
       },
+      {
+        id: "conn:export",
+        label: "Export connections…",
+        hint: "Data",
+        run: async () => {
+          const path = await api.exportConnections()
+          if (path) addToast(`Connections exported to ${path}`, "success")
+        },
+      },
+      {
+        id: "conn:import",
+        label: "Import connections…",
+        hint: "Data",
+        run: async () => {
+          const result = await api.importConnections()
+          if (result.length > 0) addToast(`${result.length} connections imported`, "success")
+        },
+      },
+      {
+        id: "conn:export-all",
+        label: "Export all connections",
+        hint: "Data",
+        run: async () => {
+          const path = await api.exportAllConnections()
+          if (path) addToast(`All connections exported to ${path}`, "success")
+        },
+      },
+      {
+        id: "conn:import-all",
+        label: "Import all connections",
+        hint: "Data",
+        run: async () => {
+          const result = await api.importAllConnections()
+          const total = result.elastic.length + result.kafka.length + result.redis.length
+          if (total > 0) addToast(`${total} connections imported`, "success")
+        },
+      },
       ...connections.map((c) => ({
         id: `conn:${c.id}`,
         label: `Switch to ${c.name}`,
@@ -205,6 +244,8 @@ export interface KafkaPaletteOptions {
   onCopyAllTopics: () => void;
   onCopyVisibleTopics: () => void;
   onBackToPicker?: () => void;
+  onExportConnections: () => void;
+  onImportConnections: () => void;
 }
 
 export function useKafkaPaletteCommands(
@@ -227,6 +268,8 @@ export function useKafkaPaletteCommands(
     onCopyAllTopics,
     onCopyVisibleTopics,
     onBackToPicker,
+    onExportConnections,
+    onImportConnections,
   } = options;
 
   return useMemo<Command[]>(() => {
@@ -305,6 +348,40 @@ export function useKafkaPaletteCommands(
       run: onNewConnection,
     });
 
+    cmds.push(
+      {
+        id: "conn:export",
+        label: "Export Kafka connections…",
+        hint: "Data",
+        run: onExportConnections,
+      },
+      {
+        id: "conn:import",
+        label: "Import Kafka connections…",
+        hint: "Data",
+        run: onImportConnections,
+      },
+      {
+        id: "conn:export-all",
+        label: "Export all connections",
+        hint: "Data",
+        run: async () => {
+          const path = await api.exportAllConnections()
+          if (path) addToast(`All connections exported to ${path}`, "success")
+        },
+      },
+      {
+        id: "conn:import-all",
+        label: "Import all connections",
+        hint: "Data",
+        run: async () => {
+          const result = await api.importAllConnections()
+          const total = result.elastic.length + result.kafka.length + result.redis.length
+          if (total > 0) addToast(`${total} connections imported`, "success")
+        },
+      },
+    );
+
     if (onBackToPicker) {
       cmds.push({
         id: "back:picker",
@@ -331,6 +408,8 @@ export function useKafkaPaletteCommands(
     onCopyAllTopics,
     onCopyVisibleTopics,
     onCreateTopic,
+    onExportConnections,
+    onImportConnections,
     onNewConnection,
     onOpenTopicDetail,
     onProduceMessage,
@@ -356,6 +435,8 @@ export interface RedisPaletteOptions {
   onClearConsole?: () => void;
   onFocusCommandInput?: () => void;
   onBackToPicker?: () => void;
+  onExportConnections: () => void;
+  onImportConnections: () => void;
 }
 
 export function useRedisPaletteCommands(
@@ -374,6 +455,8 @@ export function useRedisPaletteCommands(
     onClearConsole,
     onFocusCommandInput,
     onBackToPicker,
+    onExportConnections,
+    onImportConnections,
   } = options;
 
   return useMemo<Command[]>(() => {
@@ -445,6 +528,40 @@ export function useRedisPaletteCommands(
       run: onNewConnection,
     });
 
+    cmds.push(
+      {
+        id: "conn:export",
+        label: "Export Redis connections…",
+        hint: "Data",
+        run: onExportConnections,
+      },
+      {
+        id: "conn:import",
+        label: "Import Redis connections…",
+        hint: "Data",
+        run: onImportConnections,
+      },
+      {
+        id: "conn:export-all",
+        label: "Export all connections",
+        hint: "Data",
+        run: async () => {
+          const path = await api.exportAllConnections()
+          if (path) addToast(`All connections exported to ${path}`, "success")
+        },
+      },
+      {
+        id: "conn:import-all",
+        label: "Import all connections",
+        hint: "Data",
+        run: async () => {
+          const result = await api.importAllConnections()
+          const total = result.elastic.length + result.kafka.length + result.redis.length
+          if (total > 0) addToast(`${total} connections imported`, "success")
+        },
+      },
+    );
+
     if (onBackToPicker) {
       cmds.push({
         id: "back:picker",
@@ -469,7 +586,9 @@ export function useRedisPaletteCommands(
     connections,
     onBackToPicker,
     onClearConsole,
+    onExportConnections,
     onFocusCommandInput,
+    onImportConnections,
     onLoadMoreKeys,
     onNewConnection,
     onRefresh,

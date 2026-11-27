@@ -1535,6 +1535,14 @@ export function KafkaWorkspace({ onClose }: { onClose: () => void }) {
         .catch(() => addToast("Failed to copy topic names", "error"));
     }, [visibleTopics]),
     onBackToPicker: onClose,
+    onExportConnections: async () => {
+      const path = await api.exportKafkaConnections()
+      if (path) addToast(`Connections exported to ${path}`, "success")
+    },
+    onImportConnections: async () => {
+      const result = await api.importKafkaConnections()
+      if (result.length > 0) addToast(`${result.length} connections imported`, "success")
+    },
   });
 
   return (

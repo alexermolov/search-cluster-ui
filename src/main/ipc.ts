@@ -274,6 +274,112 @@ export function registerIpcHandlers(
     fetchRedisServerInfo(redisConfigFor(id)),
   )
 
+  // Connection export/import
+  ipcMain.handle(IPC.ConnectionsExport, async () => {
+    const { canceled, filePath } = await dialog.showSaveDialog({
+      title: 'Export Elasticsearch/OpenSearch Connections',
+      defaultPath: `elastic-connections-${Date.now()}.json`,
+      filters: [{ name: 'JSON', extensions: ['json'] }],
+    })
+    if (canceled || !filePath) return null
+    const connections = store.list()
+    await fs.writeFile(filePath, JSON.stringify(connections, null, 2), 'utf8')
+    return filePath
+  })
+
+  ipcMain.handle(IPC.ConnectionsImport, async () => {
+    const { canceled, filePaths } = await dialog.showOpenDialog({
+      title: 'Import Elasticsearch/OpenSearch Connections',
+      properties: ['openFile'],
+      filters: [{ name: 'JSON', extensions: ['json'] }],
+    })
+    if (canceled || !filePaths[0]) return []
+    const data = JSON.parse(await fs.readFile(filePaths[0], 'utf8')) as SaveConnectionInput[]
+    return Promise.all(data.map((c) => store.save(c)))
+  })
+
+  ipcMain.handle(IPC.KafkaConnectionsExport, async () => {
+    const { canceled, filePath } = await dialog.showSaveDialog({
+      title: 'Export Kafka Connections',
+      defaultPath: `kafka-connections-${Date.now()}.json`,
+      filters: [{ name: 'JSON', extensions: ['json'] }],
+    })
+    if (canceled || !filePath) return null
+    const connections = kafkaStore.list()
+    await fs.writeFile(filePath, JSON.stringify(connections, null, 2), 'utf8')
+    return filePath
+  })
+
+  ipcMain.handle(IPC.KafkaConnectionsImport, async () => {
+    const { canceled, filePaths } = await dialog.showOpenDialog({
+      title: 'Import Kafka Connections',
+      properties: ['openFile'],
+      filters: [{ name: 'JSON', extensions: ['json'] }],
+    })
+    if (canceled || !filePaths[0]) return []
+    const data = JSON.parse(await fs.readFile(filePaths[0], 'utf8')) as KafkaConnectionInput[]
+    return Promise.all(data.map((c) => kafkaStore.save(c)))
+  })
+
+  ipcMain.handle(IPC.RedisConnectionsExport, async () => {
+    const { canceled, filePath } = await dialog.showSaveDialog({
+      title: 'Export Redis Connections',
+      defaultPath: `redis-connections-${Date.now()}.json`,
+      filters: [{ name: 'JSON', extensions: ['json'] }],
+    })
+    if (canceled || !filePath) return null
+    const connections = redisStore.list()
+    await fs.writeFile(filePath, JSON.stringify(connections, null, 2), 'utf8')
+    return filePath
+  })
+
+  ipcMain.handle(IPC.RedisConnectionsImport, async () => {
+    const { canceled, filePaths } = await dialog.showOpenDialog({
+      title: 'Import Redis Connections',
+      properties: ['openFile'],
+      filters: [{ name: 'JSON', extensions: ['json'] }],
+    })
+    if (canceled || !filePaths[0]) return []
+    const data = JSON.parse(await fs.readFile(filePaths[0], 'utf8')) as RedisConnectionInput[]
+    return Promise.all(data.map((c) => redisStore.save(c)))
+  })
+
+  ipcMain.handle(IPC.AllConnectionsExport, async () => {
+    const { canceled, filePath } = await dialog.showSaveDialog({
+      title: 'Export All Connections',
+      defaultPath: `all-connections-${Date.now()}.json`,
+      filters: [{ name: 'JSON', extensions: ['json'] }],
+    })
+    if (canceled || !filePath) return null
+    const payload = {
+      elastic: store.list(),
+      kafka: kafkaStore.list(),
+      redis: redisStore.list(),
+    }
+    await fs.writeFile(filePath, JSON.stringify(payload, null, 2), 'utf8')
+    return filePath
+  })
+
+  ipcMain.handle(IPC.AllConnectionsImport, async () => {
+    const { canceled, filePaths } = await dialog.showOpenDialog({
+      title: 'Import All Connections',
+      properties: ['openFile'],
+      filters: [{ name: 'JSON', extensions: ['json'] }],
+    })
+    if (canceled || !filePaths[0]) return { elastic: [], kafka: [], redis: [] }
+    const raw = JSON.parse(await fs.readFile(filePaths[0], 'utf8')) as {
+      elastic?: unknown[]
+      kafka?: unknown[]
+      redis?: unknown[]
+    }
+    const [elastic, kafka, redis] = await Promise.all([
+      Promise.all((raw.elastic ?? []).map((c) => store.save(c as SaveConnectionInput))),
+      Promise.all((raw.kafka ?? []).map((c) => kafkaStore.save(c as KafkaConnectionInput))),
+      Promise.all((raw.redis ?? []).map((c) => redisStore.save(c as RedisConnectionInput))),
+    ])
+    return { elastic, kafka, redis }
+  })
+
   ipcMain.handle(IPC.ConnectionsList, () => store.list())
   ipcMain.handle(IPC.ConnectionsSave, (_e, input: SaveConnectionInput) => store.save(input))
   ipcMain.handle(IPC.ConnectionsDelete, (_e, id: string) => {

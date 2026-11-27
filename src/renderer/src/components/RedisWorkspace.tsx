@@ -1043,6 +1043,14 @@ export function RedisWorkspace({ onClose }: { onClose: () => void }) {
     onClearConsole: useCallback(() => setCommandOutput([]), [setCommandOutput]),
     onFocusCommandInput: useCallback(() => commandInput.current?.focus(), []),
     onBackToPicker: onClose,
+    onExportConnections: async () => {
+      const path = await api.exportRedisConnections()
+      if (path) addToast(`Connections exported to ${path}`, "success")
+    },
+    onImportConnections: async () => {
+      const result = await api.importRedisConnections()
+      if (result.length > 0) addToast(`${result.length} connections imported`, "success")
+    },
   });
 
   return (
